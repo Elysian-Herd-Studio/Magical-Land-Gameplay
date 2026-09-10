@@ -10,8 +10,7 @@ import net.minecraft.util.Hand;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import top.csituka.magicaland.client.api.FirstPersonItemView;
-import top.csituka.magicaland.client.render.GlowingItem;
+import top.csituka.magicaland.api.client.AppearanceVisuals;
 import top.csituka.magicaland.gameplay.remote.RemoteToolEntity;
 
 @Mixin(GameRenderer.class)
@@ -24,12 +23,8 @@ public abstract class RemoteHandMixin {
             renderer.renderItem(delta,matrices,buffers,player,light); return;
         }
         if (tool.stack().isEmpty()) return;
-        try (var view=FirstPersonItemView.open(player,tool,tool.stack())) {
-            GlowingItem.beginFirstPersonPass();
-            try {
+        AppearanceVisuals.renderFirstPerson(player,tool,tool.stack(),buffers,() ->
                 ((RemoteHandInvoker)renderer).magicaland$renderFirstPersonItem(player,delta,tool.getPitch(delta),
-                        Hand.MAIN_HAND,0,tool.stack(),0,matrices,buffers,client.getEntityRenderDispatcher().getLight(tool,delta));
-            } finally { GlowingItem.endFirstPersonPass(buffers); }
-        }
+                        Hand.MAIN_HAND,0,tool.stack(),0,matrices,buffers,client.getEntityRenderDispatcher().getLight(tool,delta)));
     }
 }

@@ -1,0 +1,66 @@
+plugins {
+    id 'fabric-loom' version '1.16.3'
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+apply from: 'gradle/mod-common.gradle'
+
+repositories {
+    if (providers.gradleProperty('appearanceMavenRepo').isPresent()) {
+        maven {
+            name = 'appearanceDevelopment'
+            url = uri(providers.gradleProperty('appearanceMavenRepo').get())
+            content { includeModule 'top.csituka', 'magicaland-appearance' }
+            metadataSources { mavenPom(); artifact() }
+        }
+    }
+    mavenLocal {
+        content { includeModule 'top.csituka', 'magicaland-appearance' }
+        metadataSources { mavenPom(); artifact() }
+    }
+}
+
+loom {
+    splitEnvironmentSourceSets()
+    mods {
+        magicaland_gameplay {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
+    runs {
+        client { runDir 'run/client' }
+        server { runDir 'run/server' }
+    }
+}
+
+def appearanceArtifact = "top.csituka:magicaland-appearance:${project.appearance_version}"
+dependencies {
+    modCompileOnly("${appearanceArtifact}:api") { transitive = false }
+    modRuntimeOnly(appearanceArtifact) { transitive = false }
+    modRuntimeOnly("software.bernie.geckolib:geckolib-fabric-1.20.1:${project.geckolib_version}") {
+        exclude group: 'net.fabricmc', module: 'fabric-loader'
+        exclude group: 'net.fabricmc.fabric-api'
+    }
+    modLocalRuntime("com.terraformersmc:modmenu:${project.modmenu_version}") {
+        exclude group: 'net.fabricmc', module: 'fabric-loader'
+        exclude group: 'net.fabricmc.fabric-api'
+    }
+}
+
+publishing {
+    repositories {
+        maven {
+            name = 'localDevelopment'
+            url = uri(providers.gradleProperty('gameplayMavenRepo')
+                    .getOrElse(layout.buildDirectory.dir('repo').get().asFile.absolutePath))
+        }
+    }
+}

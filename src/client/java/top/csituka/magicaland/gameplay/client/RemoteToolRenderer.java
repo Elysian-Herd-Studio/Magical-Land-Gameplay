@@ -11,10 +11,8 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.MathHelper;
 import top.csituka.magicaland.gameplay.remote.RemoteToolEntity;
-import top.csituka.magicaland.client.config.ModelManager;
-import top.csituka.magicaland.client.network.ClientNetworkHandler;
-import top.csituka.magicaland.client.render.GlowingItem;
-import top.csituka.magicaland.client.render.MagicOrb;
+import top.csituka.magicaland.api.client.Appearances;
+import top.csituka.magicaland.api.client.AppearanceVisuals;
 
 public final class RemoteToolRenderer extends EntityRenderer<RemoteToolEntity> {
     public RemoteToolRenderer(EntityRendererFactory.Context context) { super(context); }
@@ -23,19 +21,17 @@ public final class RemoteToolRenderer extends EntityRenderer<RemoteToolEntity> {
         var client=MinecraftClient.getInstance();
         if (entity.owner()==null) return;
         if (client.getCameraEntity()==entity && client.options.getPerspective().isFirstPerson()) return;
-        var config=client.player!=null && client.player.getUuid().equals(entity.owner()) ? ModelManager.getAppliedModel()
-                : ClientNetworkHandler.remoteModels.get(entity.owner());
-        int color=GlowingItem.getGlowColor(config);
+        int color=Appearances.magicColor(entity.owner());
         matrices.push();
         matrices.translate(0,.1,0);
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-MathHelper.lerpAngleDegrees(delta,entity.prevYaw,entity.getYaw())));
-        if (entity.stack().isEmpty()) MagicOrb.render(matrices,color,entity.age+delta,entity.getId());
+        if (entity.stack().isEmpty()) AppearanceVisuals.renderOrb(matrices,color,entity.age+delta,entity.getId());
         else {
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(MathHelper.lerp(delta,entity.prevPitch,entity.getPitch())));
             matrices.translate(-.20,.025*Math.sin((entity.age+delta)*.12),0);
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(65));
             matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-12));
-            GlowingItem.renderPreviewWithGlow(client.getItemRenderer(),entity.stack(),ModelTransformationMode.GROUND,
+            AppearanceVisuals.renderGlowingItem(entity.stack(),ModelTransformationMode.GROUND,
                     matrices,buffers,entity.getWorld(),light,entity.getId(),color);
         }
         matrices.pop();

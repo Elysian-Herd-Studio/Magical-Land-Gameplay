@@ -21,7 +21,10 @@ import net.minecraft.text.Text;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
-import top.csituka.magicaland.client.api.HeldItemVisibility;
+import top.csituka.magicaland.api.ApiVersion;
+import top.csituka.magicaland.api.client.AppearanceOverrides;
+import top.csituka.magicaland.api.client.AppearanceOverrides.Visibility;
+import top.csituka.magicaland.api.client.Registration;
 import top.csituka.magicaland.gameplay.remote.RemoteToolEntity;
 import top.csituka.magicaland.gameplay.remote.RemoteToolMath;
 import top.csituka.magicaland.gameplay.remote.RemoteToolServer;
@@ -36,6 +39,8 @@ public final class RemoteToolClient implements ClientModInitializer {
     private static Perspective previousPerspective;
     private static final Map<UUID, float[]> FACING=new HashMap<>();
     private static final Map<UUID, RemoteToolEntity> TOOLS=new HashMap<>();
+    private static final String APPEARANCE_OWNER="magicaland_gameplay:remote_tool";
+    private static Registration gazeOverride, handOverride;
     private static final RemoteCargoInventory CARGO=new RemoteCargoInventory();
     private static final Slot CARGO_SLOT=new Slot(CARGO,0,0,0);
     private static final Identifier SLOT_TEXTURE=new Identifier("minecraft","textures/gui/container/generic_54.png");
@@ -45,14 +50,12 @@ public final class RemoteToolClient implements ClientModInitializer {
         return active() || MinecraftClient.getInstance().currentScreen instanceof AbilityWheelScreen;
     }
     @Override public void onInitializeClient() {
+        ApiVersion.requireCompatible(1,0);
         wheel=KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.wheel",InputUtil.Type.KEYSYM,GLFW.GLFW_KEY_R,"category.magicaland_gameplay"));
         activate=KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.activate",InputUtil.Type.KEYSYM,GLFW.GLFW_KEY_V,"category.magicaland_gameplay"));
         EntityRendererRegistry.register(RemoteToolServer.TYPE,RemoteToolRenderer::new);
         RemoteBodyRenderer.register();
-        top.csituka.magicaland.client.api.ExternalGaze.setProvider(TOOLS::get);
-        HeldItemVisibility.setExternalMainHand(uuid -> {
-            RemoteToolEntity tool=TOOLS.get(uuid); return tool != null && !tool.isRemoved() && tool.carriesOriginal();
-        });
+        ClientPlayConnectionEvents.JOIN.register((handler,sender,client) -> registerAppearanceOverrides());
         ClientPlayNetworking.registerGlobalReceiver(RemoteToolServer.STATE,(client,handler,buf,sender) -> {
             int id=buf.readInt();
             var cargo=buf.readItemStack();
@@ -64,7 +67,9 @@ public final class RemoteToolClient implements ClientModInitializer {
                 entityId=id;
             });
         });
-        ClientPlayConnectionEvents.DISCONNECT.register((handler,client) -> { restore(client); TOOLS.clear(); FACING.clear(); selected=false; });
+        ClientPlayConnectionEvents.DISCONNECT.register((handler,client) -> {
+            restore(client); TOOLS.clear(); FACING.clear(); selected=false; closeAppearanceOverrides();
+        });
         ClientTickEvents.END_CLIENT_TICK.register(RemoteToolClient::tick);
         HudRenderCallback.EVENT.register((context,delta) -> {
             var client=MinecraftClient.getInstance();
@@ -86,6 +91,20 @@ public final class RemoteToolClient implements ClientModInitializer {
                         Text.translatable("text.magicaland_gameplay.remote.cargo",stack.getCount(),capacity),x+9,y+22,0xcceeff);
             }
         });
+    }
+    private static void registerAppearanceOverrides() {
+        closeAppearanceOverrides();
+        gazeOverride=AppearanceOverrides.registerGaze(APPEARANCE_OWNER,0,TOOLS::get);
+        handOverride=AppearanceOverrides.registerMainHandVisibility(APPEARANCE_OWNER,0,uuid -> {
+            RemoteToolEntity tool=TOOLS.get(uuid);
+            return tool!=null && !tool.isRemoved() && tool.getWorld()==MinecraftClient.getInstance().world
+                    && tool.carriesOriginal() ? Visibility.HIDDEN : Visibility.DEFAULT;
+        });
+    }
+    private static void closeAppearanceOverrides() {
+        if (gazeOverride!=null) gazeOverride.close();
+        if (handOverride!=null) handOverride.close();
+        gazeOverride=handOverride=null;
     }
     public static boolean held(KeyBinding binding) {
         var key=KeyBindingHelper.getBoundKeyOf(binding);
