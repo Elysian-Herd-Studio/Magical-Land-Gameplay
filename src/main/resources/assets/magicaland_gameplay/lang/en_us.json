@@ -16,9 +16,13 @@
   "text.magicaland_gameplay.remote.blocked": "Not enough unobstructed space in front of you",
   "text.magicaland_gameplay.remote.lost": "Connection obstructed; remote control ended",
   "text.magicaland_gameplay.remote.wait": "Establishing connection... Press %s again to cancel",
-  "text.magicaland_gameplay.remote.controls": "Free flight · Attack: mine / melee · Use: interact · %s: return",
+  "text.magicaland_gameplay.remote.controls": "Attack: mine / melee · Use: interact · Scroll / numbers: slot · %s: drop one (Ctrl: stack) · %s: return",
+  "text.magicaland_gameplay.remote.controls_short": "Scroll / numbers: slot · %s: drop · %s: return",
+  "text.magicaland_gameplay.remote.marker": "Projected",
+  "text.magicaland_gameplay.remote.returning": "Returning to your body...",
+  "text.magicaland_gameplay.remote.blind": "Fully obscured · Backtrack to see; moving deeper returns you · %s: return",
   "text.magicaland_gameplay.remote.edge": "Approaching the control boundary (16 blocks)",
   "text.magicaland_gameplay.remote.cargo": "Cargo %s / %s",
-  "text.magicaland_gameplay.remote.occupied": "Your only slot still holds cargo. Make inventory space, then project empty-handed and return to collect it.",
-  "text.magicaland_gameplay.remote.cargo_retained": "Inventory full. Remaining items are safe in remote cargo; make room, then project and return to collect them."
+  "text.magicaland_gameplay.remote.occupied": "No remote slot can hold this item. Make inventory space, then project empty-handed and return to collect retained items.",
+  "text.magicaland_gameplay.remote.cargo_retained": "Inventory full. Remaining items are safe in your remote hotbar; make room, then project and return to collect them."
 }

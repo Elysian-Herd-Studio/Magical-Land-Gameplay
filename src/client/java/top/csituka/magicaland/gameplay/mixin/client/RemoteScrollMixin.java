@@ -11,6 +11,9 @@ import top.csituka.magicaland.gameplay.client.RemoteToolClient;
 public abstract class RemoteScrollMixin {
     @Inject(method="onMouseScroll",at=@At("HEAD"),cancellable=true)
     private void remoteScroll(long window,double horizontal,double vertical,CallbackInfo ci) {
-        if (RemoteToolClient.active()) ci.cancel();
+        if (RemoteToolClient.active()) {
+            RemoteToolClient.scroll(vertical);
+            ci.cancel();
+        }
     }
 }

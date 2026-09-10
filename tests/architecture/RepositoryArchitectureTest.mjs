@@ -38,7 +38,7 @@ const metadata = json('src/main/resources/fabric.mod.json');
 check(metadata.id === 'magicaland_gameplay', 'gameplay has its own mod ID');
 check(metadata.environment === '*', 'addon has both client and server behavior');
 check(metadata.depends.magicaland === '${appearance_compatibility}', 'Fabric dependency uses a separate compatibility range');
-check(properties.appearance_compatibility === '>=0.3.0 <0.4.0', 'API v1 appearance compatibility is bounded');
+check(properties.appearance_compatibility === '>=0.3.2 <0.4.0', 'API v1.2 appearance compatibility is bounded');
 check(metadata.contact.sources.endsWith('/Magical-Land-Gameplay'), 'metadata points to this repository');
 
 const classes = new Set();

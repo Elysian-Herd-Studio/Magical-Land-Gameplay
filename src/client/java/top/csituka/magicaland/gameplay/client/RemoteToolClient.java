@@ -1,6 +1,7 @@
 package top.csituka.magicaland.gameplay.client;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.UUID;
 import net.fabricmc.api.ClientModInitializer;
@@ -12,192 +13,278 @@ import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.option.Perspective;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 import top.csituka.magicaland.api.ApiVersion;
 import top.csituka.magicaland.api.client.AppearanceOverrides;
-import top.csituka.magicaland.api.client.AppearanceOverrides.Visibility;
 import top.csituka.magicaland.api.client.Registration;
+import top.csituka.magicaland.gameplay.remote.RemoteAction;
 import top.csituka.magicaland.gameplay.remote.RemoteToolEntity;
 import top.csituka.magicaland.gameplay.remote.RemoteToolMath;
 import top.csituka.magicaland.gameplay.remote.RemoteToolServer;
-import top.csituka.magicaland.gameplay.remote.RemoteCargoInventory;
 
 public final class RemoteToolClient implements ClientModInitializer {
+    private static final RemoteSessionState SESSION = new RemoteSessionState();
+    private static final Map<UUID, float[]> FACING = new HashMap<>();
+    private static final Map<UUID, RemoteToolEntity> TOOLS = new HashMap<>();
+    private static final String APPEARANCE_OWNER = "magicaland_gameplay:remote_tool";
     private static KeyBinding wheel, activate;
-    private static int entityId=-1, waiting;
-    private static boolean selected, stopping;
-    private static boolean attackQueued, useQueued;
+    private static Registration gazeOverride, magicOverride;
     private static RemoteToolEntity camera;
     private static Perspective previousPerspective;
-    private static final Map<UUID, float[]> FACING=new HashMap<>();
-    private static final Map<UUID, RemoteToolEntity> TOOLS=new HashMap<>();
-    private static final String APPEARANCE_OWNER="magicaland_gameplay:remote_tool";
-    private static Registration gazeOverride, handOverride;
-    private static final RemoteCargoInventory CARGO=new RemoteCargoInventory();
-    private static final Slot CARGO_SLOT=new Slot(CARGO,0,0,0);
-    private static final Identifier SLOT_TEXTURE=new Identifier("minecraft","textures/gui/container/generic_54.png");
-    public static boolean active() { return entityId >= 0 || waiting > 0; }
-    public static boolean controlling() { return camera != null && !camera.isRemoved() && !stopping; }
-    public static boolean blockBodyInput() {
-        return active() || MinecraftClient.getInstance().currentScreen instanceof AbilityWheelScreen;
+    private static ItemStack[] cargo = {ItemStack.EMPTY};
+    private static int waiting, selectedSlot, selectionAck = -1, lastKeys;
+    private static boolean selected, attackQueued, useQueued, returned;
+    private static double scrollRemainder, returnStarted, returnSwitched;
+    private static float stateOcclusion;
+
+    public static boolean active() { return SESSION.active(); }
+    public static boolean controlling() { return SESSION.phase() == RemoteSessionState.Phase.CONTROLLING && camera != null; }
+    public static boolean returning() { return SESSION.phase() == RemoteSessionState.Phase.RETURNING; }
+    public static boolean waiting() { return SESSION.phase() == RemoteSessionState.Phase.REQUESTING || SESSION.phase() == RemoteSessionState.Phase.CONNECTING; }
+    public static boolean blockBodyInput() { return active() || MinecraftClient.getInstance().currentScreen instanceof AbilityWheelScreen; }
+    public static int capacity() { return cargo.length; }
+    public static int selectedSlot() { return selectedSlot; }
+    public static ItemStack stack(int slot) { return slot >= 0 && slot < cargo.length ? cargo[slot] : ItemStack.EMPTY; }
+    public static RemoteToolEntity camera() { return camera; }
+    public static boolean ownsCamera(RemoteToolEntity tool) { return camera == tool && active(); }
+    public static ItemStack visualStack(RemoteToolEntity tool) { return ownsCamera(tool) ? stack(selectedSlot) : tool.stack(); }
+    public static int visualSlot(RemoteToolEntity tool) { return ownsCamera(tool) ? selectedSlot : tool.selectedSlot(); }
+    public static Text returnKey() { return activate.getBoundKeyLocalizedText(); }
+    public static Text dropKey() { return MinecraftClient.getInstance().options.dropKey.getBoundKeyLocalizedText(); }
+    public static float occlusion() { return returned ? 0 : camera == null ? stateOcclusion : camera.occlusion(); }
+    public static double seconds() { return System.nanoTime() / 1_000_000_000.0; }
+
+    public static float returnOpacity() {
+        if (!returning()) return 0;
+        double now = seconds();
+        return returned ? 1 - RemoteVisualMath.smooth((float)((now - returnSwitched) / .18))
+                : RemoteVisualMath.smooth((float)((now - returnStarted) / .10));
     }
+
     @Override public void onInitializeClient() {
-        ApiVersion.requireCompatible(1,0);
-        wheel=KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.wheel",InputUtil.Type.KEYSYM,GLFW.GLFW_KEY_R,"category.magicaland_gameplay"));
-        activate=KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.activate",InputUtil.Type.KEYSYM,GLFW.GLFW_KEY_V,"category.magicaland_gameplay"));
-        EntityRendererRegistry.register(RemoteToolServer.TYPE,RemoteToolRenderer::new);
+        ApiVersion.requireCompatible(1,2);
+        wheel = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.wheel", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_R, "category.magicaland_gameplay"));
+        activate = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.activate", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.magicaland_gameplay"));
+        EntityRendererRegistry.register(RemoteToolServer.TYPE, RemoteToolRenderer::new);
         RemoteBodyRenderer.register();
-        ClientPlayConnectionEvents.JOIN.register((handler,sender,client) -> registerAppearanceOverrides());
-        ClientPlayNetworking.registerGlobalReceiver(RemoteToolServer.STATE,(client,handler,buf,sender) -> {
-            int id=buf.readInt();
-            var cargo=buf.readItemStack();
-            client.execute(() -> {
-                CARGO.setStack(0,cargo);
-                if (id < 0) { restore(client); return; }
-                if (stopping) { sendStop(id); return; }
-                if (entityId != id) waiting=40;
-                entityId=id;
-            });
+        ClientPlayConnectionEvents.JOIN.register((handler,sender,client) -> {
+            reset(client); closeAppearanceOverride();
+            gazeOverride = AppearanceOverrides.registerGaze(APPEARANCE_OWNER,0,TOOLS::get);
+            magicOverride = AppearanceOverrides.registerMagicActivity(APPEARANCE_OWNER,0,RemoteToolClient::magicActive);
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler,client) -> {
-            restore(client); TOOLS.clear(); FACING.clear(); selected=false; closeAppearanceOverrides();
+            reset(client); TOOLS.clear(); FACING.clear(); selected=false; closeAppearanceOverride();
+        });
+        ClientPlayNetworking.registerGlobalReceiver(RemoteToolServer.STATE,(client,handler,buf,sender) -> {
+            try {
+                if (buf.readableBytes() > 262144) return;
+                long request = buf.readLong(), session = buf.readLong();
+                int entity = buf.readInt(), sequence = buf.readInt(), ack = buf.readInt();
+                int reason = buf.readUnsignedByte(), capacity = buf.readUnsignedByte(), slot = buf.readUnsignedByte();
+                float occlusion = buf.readFloat();
+                if (capacity < 1 || capacity > 9 || slot >= capacity || reason > 5 || ack < -1
+                        || !Float.isFinite(occlusion) || occlusion < 0 || occlusion > 1) return;
+                ItemStack[] stacks = new ItemStack[capacity];
+                for (int i=0; i<capacity; i++) stacks[i] = buf.readItemStack();
+                if (buf.isReadable()) return;
+                client.execute(() -> {
+                    if (client.getNetworkHandler() != handler) return;
+                    receive(client,request,session,entity,sequence,ack,slot,occlusion,stacks);
+                });
+            } catch (RuntimeException ignored) {}
         });
         ClientTickEvents.END_CLIENT_TICK.register(RemoteToolClient::tick);
-        HudRenderCallback.EVENT.register((context,delta) -> {
-            var client=MinecraftClient.getInstance();
-            if (!active() || client.player == null || client.options.hudHidden) return;
-            String key=camera == null ? "text.magicaland_gameplay.remote.wait" : "text.magicaland_gameplay.remote.controls";
-            context.drawCenteredTextWithShadow(client.textRenderer,Text.translatable(key,activate.getBoundKeyLocalizedText()),
-                    context.getScaledWindowWidth()/2,context.getScaledWindowHeight()-65,0xcceeff);
-            if (camera != null) {
-                double distance=camera.getPos().distanceTo(client.player.getEyePos());
-                if (distance > 13) context.drawCenteredTextWithShadow(client.textRenderer,
-                        Text.translatable("text.magicaland_gameplay.remote.edge"),context.getScaledWindowWidth()/2,35,0xffcc66);
-                int x=context.getScaledWindowWidth()/2-9, y=context.getScaledWindowHeight()-105;
-                context.drawTexture(SLOT_TEXTURE,x,y,7,17,18,18);
-                var stack=CARGO_SLOT.getStack();
-                context.drawItem(stack,x+1,y+1);
-                context.drawItemInSlot(client.textRenderer,stack,x+1,y+1);
-                int capacity=stack.isEmpty()?RemoteCargoInventory.CAPACITY:Math.min(RemoteCargoInventory.CAPACITY,stack.getMaxCount());
-                context.drawCenteredTextWithShadow(client.textRenderer,
-                        Text.translatable("text.magicaland_gameplay.remote.cargo",stack.getCount(),capacity),x+9,y+22,0xcceeff);
-            }
-        });
+        HudRenderCallback.EVENT.register(RemoteToolHud::renderHud);
     }
-    private static void registerAppearanceOverrides() {
-        closeAppearanceOverrides();
-        gazeOverride=AppearanceOverrides.registerGaze(APPEARANCE_OWNER,0,TOOLS::get);
-        handOverride=AppearanceOverrides.registerMainHandVisibility(APPEARANCE_OWNER,0,uuid -> {
-            RemoteToolEntity tool=TOOLS.get(uuid);
-            return tool!=null && !tool.isRemoved() && tool.getWorld()==MinecraftClient.getInstance().world
-                    && tool.carriesOriginal() ? Visibility.HIDDEN : Visibility.DEFAULT;
-        });
+
+    private static void receive(MinecraftClient client, long request, long session, int entity,
+            int sequence, int ack, int slot, float occlusion, ItemStack[] stacks) {
+        RemoteSessionState.Update result = SESSION.accept(request,session,entity,sequence);
+        if (result == RemoteSessionState.Update.CANCEL_LATE_START) {
+            sendStop(request,session,entity); return;
+        }
+        if (result == RemoteSessionState.Update.IGNORE) {
+            if (!active() && request == SESSION.request() && entity >= 0) sendStop(request,session,entity);
+            return;
+        }
+        cargo = stacks; stateOcclusion = occlusion;
+        if (selectionAck < 0 || ack >= selectionAck) { selectedSlot = slot; selectionAck = -1; }
+        selectedSlot = Math.min(selectedSlot,cargo.length-1);
+        if (result == RemoteSessionState.Update.ENDED) beginReturn(client);
     }
-    private static void closeAppearanceOverrides() {
-        if (gazeOverride!=null) gazeOverride.close();
-        if (handOverride!=null) handOverride.close();
-        gazeOverride=handOverride=null;
+
+    private static void closeAppearanceOverride() {
+        if (gazeOverride != null) gazeOverride.close();
+        if (magicOverride != null) magicOverride.close();
+        gazeOverride = magicOverride = null;
     }
+
+    private static boolean magicActive(UUID owner) {
+        var tool=TOOLS.get(owner);
+        var world=MinecraftClient.getInstance().world;
+        return world!=null && tool!=null && !tool.isRemoved() && tool.getWorld()==world && owner.equals(tool.owner());
+    }
+
     public static boolean held(KeyBinding binding) {
-        var key=KeyBindingHelper.getBoundKeyOf(binding);
-        long window=MinecraftClient.getInstance().getWindow().getHandle();
+        var key = KeyBindingHelper.getBoundKeyOf(binding);
+        long window = MinecraftClient.getInstance().getWindow().getHandle();
         if (key.getCode() < 0) return false;
-        return key.getCategory()==InputUtil.Type.MOUSE ? GLFW.glfwGetMouseButton(window,key.getCode())==GLFW.GLFW_PRESS
+        return key.getCategory() == InputUtil.Type.MOUSE ? GLFW.glfwGetMouseButton(window,key.getCode()) == GLFW.GLFW_PRESS
                 : InputUtil.isKeyPressed(window,key.getCode());
     }
     public static boolean wheelHeld() { return held(wheel); }
     public static void select() { selected=true; }
+
     private static void tick(MinecraftClient client) {
-        if (client.world == null || client.player == null) { restore(client); TOOLS.clear(); FACING.clear(); return; }
+        if (client.world == null || client.player == null) { reset(client); TOOLS.clear(); FACING.clear(); return; }
         TOOLS.clear();
+        var present = new HashSet<UUID>();
         for (Entity entity : client.world.getEntities()) if (entity instanceof RemoteToolEntity tool && !tool.isRemoved() && tool.owner()!=null) {
-            TOOLS.put(tool.owner(),tool);
-            PlayerEntity player=client.world.getPlayerByUuid(tool.owner());
+            TOOLS.put(tool.owner(),tool); present.add(tool.getUuid());
+            PlayerEntity player = client.world.getPlayerByUuid(tool.owner());
             if (player == null) continue;
-            float[] old=FACING.computeIfAbsent(player.getUuid(),id -> new float[] {player.bodyYaw,player.headYaw,player.getPitch()});
-            var target=tool.getEyePos().subtract(player.getEyePos());
-            float[] next=RemoteToolMath.facing(target.x,target.y,target.z,old[0],old[1],old[2]);
+            float[] old = FACING.computeIfAbsent(player.getUuid(),id -> new float[] {player.bodyYaw,player.headYaw,player.getPitch()});
+            var target = tool.getEyePos().subtract(player.getEyePos());
+            float[] next = RemoteToolMath.facing(target.x,target.y,target.z,old[0],old[1],old[2]);
             player.prevBodyYaw=old[0]; player.prevHeadYaw=old[1]; player.prevPitch=old[2];
             player.bodyYaw=next[0]; player.headYaw=next[1]; player.setYaw(next[1]); player.setPitch(next[2]);
             FACING.put(player.getUuid(),next);
         }
-        FACING.keySet().retainAll(TOOLS.keySet());
-        while (wheel.wasPressed()) if (client.currentScreen==null && !active()) client.setScreen(new AbilityWheelScreen());
-        while (activate.wasPressed()) if (client.currentScreen==null) {
+        FACING.keySet().retainAll(TOOLS.keySet()); RemoteHeldAnimation.retain(present);
+        while (wheel.wasPressed()) if (client.currentScreen == null && !active()) client.setScreen(new AbilityWheelScreen());
+        while (activate.wasPressed()) if (client.currentScreen == null) {
             if (active()) stop();
             else if (!selected) client.player.sendMessage(Text.translatable("text.magicaland_gameplay.remote.select",wheel.getBoundKeyLocalizedText()),true);
             else if (ClientPlayNetworking.canSend(RemoteToolServer.CONTROL)) {
-                waiting=40; stopping=false;
-                var request=PacketByteBufs.create(); request.writeByte(0);
+                waiting=40; returned=false; selectionAck=-1; lastKeys=0;
+                selectedSlot=0; cargo=new ItemStack[] {ItemStack.EMPTY};
+                var request=PacketByteBufs.create(); request.writeByte(0).writeLong(SESSION.begin());
                 ClientPlayNetworking.send(RemoteToolServer.CONTROL,request);
             } else client.player.sendMessage(Text.translatable("text.magicaland_gameplay.remote.server"),true);
         }
         if (!active()) return;
-        if (client.currentScreen!=null || !client.player.isAlive() || !client.isWindowFocused()) { stop(); return; }
-        if (camera == null && entityId >= 0 && client.world.getEntityById(entityId) instanceof RemoteToolEntity tool
+        if (!client.player.isAlive() || client.currentScreen != null || !client.isWindowFocused()) {
+            sendStop(SESSION.request(),SESSION.session(),SESSION.entity()); reset(client); return;
+        }
+        if (camera!=null && camera.getWorld()!=client.world) {
+            sendStop(SESSION.request(),SESSION.session(),SESSION.entity()); reset(client); return;
+        }
+        if (returning()) {
+            if (!returned && seconds()-returnStarted >= .10) { restoreCamera(client); returned=true; returnSwitched=seconds(); }
+            if (returned && seconds()-returnSwitched >= .18) reset(client);
+            consumeBodyActions(); return;
+        }
+        if (camera == null && SESSION.entity() >= 0 && client.world.getEntityById(SESSION.entity()) instanceof RemoteToolEntity tool
                 && client.player.getUuid().equals(tool.owner())) {
             camera=tool; camera.localSteering=true; previousPerspective=client.options.getPerspective();
-            client.options.setPerspective(Perspective.FIRST_PERSON); client.setCameraEntity(camera); waiting=0;
+            client.options.setPerspective(Perspective.FIRST_PERSON); client.setCameraEntity(camera);
+            SESSION.connected(); waiting=0;
         }
         if (camera == null) { if (--waiting<=0) stop(); return; }
-        if (camera.isRemoved() || camera.getWorld()!=client.world) { stop(); return; }
-        if (!stopping) {
-            var options=client.options;
-            int keys=(held(options.forwardKey)?1:0)|(held(options.backKey)?2:0)|(held(options.leftKey)?4:0)
-                    |(held(options.rightKey)?8:0)|(held(options.jumpKey)?16:0)|(held(options.sneakKey)?32:0)
-                    |(held(options.attackKey)||attackQueued?64:0)|(held(options.useKey)||useQueued?128:0);
-            var input=PacketByteBufs.create();
-            input.writeByte(2).writeInt(entityId).writeFloat(camera.getYaw()).writeFloat(camera.getPitch()).writeByte(keys);
-            ClientPlayNetworking.send(RemoteToolServer.CONTROL,input);
-            attackQueued=useQueued=false;
-            consumeBodyActions();
+        if (camera.isRemoved()) { stop(); return; }
+        var options=client.options;
+        int keys=(held(options.forwardKey)?1:0)|(held(options.backKey)?2:0)|(held(options.leftKey)?4:0)
+                |(held(options.rightKey)?8:0)|(held(options.jumpKey)?16:0)|(held(options.sneakKey)?32:0)
+                |(held(options.attackKey)||attackQueued?64:0)|(held(options.useKey)||useQueued?128:0);
+        if (camera.occlusion()<.999f) {
+            if ((keys&64)!=0 && ((lastKeys&64)==0 || attackQueued)) RemoteHeldAnimation.predict(camera,RemoteAction.SWING);
+            if ((keys&128)!=0 && ((lastKeys&128)==0 || useQueued)) RemoteHeldAnimation.predict(camera,RemoteAction.USE);
         }
+        int sequence=SESSION.nextInput();
+        if (selectionAck==Integer.MAX_VALUE) selectionAck=sequence;
+        var input=PacketByteBufs.create();
+        input.writeByte(2).writeLong(SESSION.session()).writeInt(SESSION.entity()).writeInt(sequence)
+                .writeFloat(camera.getYaw()).writeFloat(camera.getPitch()).writeByte(keys).writeByte(selectedSlot);
+        ClientPlayNetworking.send(RemoteToolServer.CONTROL,input);
+        lastKeys=keys; attackQueued=useQueued=false;
+        consumeBodyActions();
     }
+
     public static void consumeBodyActions() {
         if (!active()) return;
         var options=MinecraftClient.getInstance().options;
+        for (int i=0; i<options.hotbarKeys.length; i++) {
+            var key=options.hotbarKeys[i]; key.setPressed(false);
+            while (key.wasPressed()) selectSlot(i);
+        }
         for (KeyBinding key : new KeyBinding[] {options.swapHandsKey,options.dropKey,options.attackKey,options.useKey}) {
             key.setPressed(false);
-            while(key.wasPressed()) {
+            while (key.wasPressed()) {
                 if (key==options.attackKey) attackQueued=true;
                 if (key==options.useKey) useQueued=true;
+                if (key==options.dropKey) dropSelected(Screen.hasControlDown());
             }
         }
-        for (KeyBinding key : options.hotbarKeys) { key.setPressed(false); while(key.wasPressed()) {} }
+    }
+
+    private static void dropSelected(boolean wholeStack) {
+        var client=MinecraftClient.getInstance();
+        if (!controlling() || client.currentScreen!=null || !client.isWindowFocused()
+                || camera.isRemoved() || camera.getWorld()!=client.world || camera.occlusion()>=1
+                || stack(selectedSlot).isEmpty() || !ClientPlayNetworking.canSend(RemoteToolServer.CONTROL)) return;
+        int sequence=SESSION.nextInput();
+        if (selectionAck==Integer.MAX_VALUE) selectionAck=sequence;
+        var drop=PacketByteBufs.create();
+        drop.writeByte(3).writeLong(SESSION.session()).writeInt(SESSION.entity()).writeInt(sequence)
+                .writeByte(selectedSlot).writeByte(wholeStack?1:0);
+        ClientPlayNetworking.send(RemoteToolServer.CONTROL,drop);
+    }
+
+    public static void scroll(double amount) {
+        if (!controlling() || !Double.isFinite(amount)) return;
+        scrollRemainder+=Math.max(-100,Math.min(100,amount));
+        int steps=(int)scrollRemainder; scrollRemainder-=steps;
+        if (steps!=0) selectSlot(RemoteVisualMath.slot(selectedSlot,-steps,cargo.length));
+    }
+    public static void selectSlot(int slot) {
+        if (!controlling() || slot < 0 || slot >= cargo.length || slot==selectedSlot) return;
+        selectedSlot=slot; selectionAck=Integer.MAX_VALUE;
+        attackQueued=useQueued=false;
     }
     public static boolean look(double x,double y) {
         if (!active()) return false;
-        if (controlling()) camera.changeLookDirection(x,y);
+        if (controlling()) {
+            camera.changeLookDirection(x,y);
+            camera.setPitch(Math.max(-89,Math.min(89,camera.getPitch())));
+        }
         return true;
     }
     public static void stop() {
-        var client=MinecraftClient.getInstance();
-        int id=entityId;
-        restore(client);
-        stopping=true;
-        if (id>=0) sendStop(id);
+        if (!active() || returning()) return;
+        sendStop(SESSION.request(),SESSION.session(),SESSION.entity());
+        SESSION.returning(); beginReturn(MinecraftClient.getInstance());
     }
-    private static void sendStop(int id) {
-        if (ClientPlayNetworking.canSend(RemoteToolServer.CONTROL)) {
-            var request=PacketByteBufs.create(); request.writeByte(1).writeInt(id);
-            ClientPlayNetworking.send(RemoteToolServer.CONTROL,request);
-        }
+    private static void sendStop(long requestToken,long sessionToken,int entity) {
+        if (!ClientPlayNetworking.canSend(RemoteToolServer.CONTROL)) return;
+        var request=PacketByteBufs.create();
+        request.writeByte(1).writeLong(requestToken).writeLong(sessionToken).writeInt(entity);
+        ClientPlayNetworking.send(RemoteToolServer.CONTROL,request);
     }
-    private static void restore(MinecraftClient client) {
+    private static void beginReturn(MinecraftClient client) {
+        SESSION.returning(); returnStarted=seconds(); returned=false;
+        attackQueued=useQueued=false;
+        if (camera==null || client.world==null || client.player==null) { reset(client); return; }
+        camera.localSteering=false;
+    }
+    private static void restoreCamera(MinecraftClient client) {
         if (camera!=null) {
             camera.localSteering=false;
             if (client.getCameraEntity()==camera) client.setCameraEntity(client.player);
         }
         if (previousPerspective!=null) client.options.setPerspective(previousPerspective);
-        camera=null; entityId=-1; waiting=0; stopping=false; previousPerspective=null;
-        attackQueued=useQueued=false;
+        camera=null; previousPerspective=null;
+    }
+    private static void reset(MinecraftClient client) {
+        restoreCamera(client); SESSION.clear(); RemoteHeldAnimation.clear(); RemoteToolHud.reset();
+        waiting=lastKeys=selectedSlot=0; selectionAck=-1; stateOcclusion=0; scrollRemainder=0;
+        returned=attackQueued=useQueued=false; cargo=new ItemStack[] {ItemStack.EMPTY};
     }
 }

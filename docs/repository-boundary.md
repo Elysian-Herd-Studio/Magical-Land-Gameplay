@@ -12,7 +12,9 @@ Gameplay 拥有能力服务端逻辑、客户端控制与 HUD、交互 Mixin、�
 
 来源：原仓库保全 `d4786bd`，初始导入 `d6166f3`；保留作者、MIT 许可和全部未提交远控源码，早期历史在 [Magical-Land](https://github.com/Magical-Land-Official/Magical-Land)。
 
-禁止因拆仓更改模组 ID、进度/条件 ID、`magicaland_remote_cargo` 和 NBT 字段、远控通道/实体 ID、授权标签。
+拆仓期间保留了模组 ID、进度/条件 ID、`magicaland_remote_cargo` 和 NBT 字段、远控通道/实体 ID、授权标签。
+
+后续出窍重构采用独立的 v2 控制通道，客户端和服务器需同步升级。库存沿用 `magicaland_remote_cargo` 并原位读取旧格式；模组、进度、实体 ID 与授权标签继续保留。当前契约见[出窍说明](remote-presence.md)，验证见[重构检查](reports/2026-09-10-remote-rebuild.md)。
 
 ## 迁移验证（2026-09-10）
 

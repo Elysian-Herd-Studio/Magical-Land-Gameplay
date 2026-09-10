@@ -11,6 +11,9 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import top.csituka.magicaland.api.client.AppearanceVisuals;
+import top.csituka.magicaland.api.client.ItemVisualContext;
+import top.csituka.magicaland.gameplay.client.RemoteHeldAnimation;
+import top.csituka.magicaland.gameplay.client.RemoteToolClient;
 import top.csituka.magicaland.gameplay.remote.RemoteToolEntity;
 
 @Mixin(GameRenderer.class)
@@ -22,9 +25,11 @@ public abstract class RemoteHandMixin {
         if (!(client.getCameraEntity() instanceof RemoteToolEntity tool) || !player.getUuid().equals(tool.owner())) {
             renderer.renderItem(delta,matrices,buffers,player,light); return;
         }
-        if (tool.stack().isEmpty()) return;
-        AppearanceVisuals.renderFirstPerson(player,tool,tool.stack(),buffers,() ->
+        var frame=RemoteHeldAnimation.sample(tool,RemoteToolClient.visualStack(tool),RemoteToolClient.visualSlot(tool),delta);
+        if (frame.stack().isEmpty()) return;
+        var view=new ItemVisualContext(tool,frame.stack(),1-frame.equip(),frame.swing(),frame.acting(),false);
+        AppearanceVisuals.renderFirstPerson(player,view,buffers,() ->
                 ((RemoteHandInvoker)renderer).magicaland$renderFirstPersonItem(player,delta,tool.getPitch(delta),
-                        Hand.MAIN_HAND,0,tool.stack(),0,matrices,buffers,client.getEntityRenderDispatcher().getLight(tool,delta)));
+                        Hand.MAIN_HAND,frame.swing(),frame.stack(),frame.equip(),matrices,buffers,client.getEntityRenderDispatcher().getLight(tool,delta)));
     }
 }

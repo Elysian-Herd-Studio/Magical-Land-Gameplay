@@ -27,19 +27,18 @@ public final class RemoteCargoState extends PersistentState {
         NbtList entries=nbt.getList("Players",NbtElement.COMPOUND_TYPE);
         for (int i=0;i<entries.size();i++) {
             NbtCompound entry=entries.getCompound(i);
-            if (entry.containsUuid("Owner")) state.inventory(entry.getUuid("Owner"))
-                    .readNbtList(entry.getList("Items",NbtElement.COMPOUND_TYPE));
+            if (entry.containsUuid("Owner")) state.inventory(entry.getUuid("Owner")).readSaved(entry);
         }
         return state;
     }
     @Override public NbtCompound writeNbt(NbtCompound nbt) {
         NbtList entries=new NbtList();
         inventories.forEach((owner,inventory) -> {
-            if (inventory.isEmpty()) return;
+            if (inventory.isEmpty() && inventory.unlockedSlots()==1) return;
             NbtCompound entry=new NbtCompound();
-            entry.putUuid("Owner",owner); entry.put("Items",inventory.toNbtList()); entries.add(entry);
+            entry.putUuid("Owner",owner); inventory.writeSaved(entry); entries.add(entry);
         });
-        nbt.put("Players",entries);
+        nbt.putInt("Version",2); nbt.put("Players",entries);
         return nbt;
     }
 }

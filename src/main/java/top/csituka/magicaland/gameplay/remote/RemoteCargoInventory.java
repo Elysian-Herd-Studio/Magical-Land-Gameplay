@@ -1,46 +1,148 @@
 package top.csituka.magicaland.gameplay.remote;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Predicate;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtElement;
+import net.minecraft.nbt.NbtList;
 import net.minecraft.screen.slot.Slot;
 
 public final class RemoteCargoInventory extends SimpleInventory {
-    public static final int CAPACITY = 8;
-    public RemoteCargoInventory() { super(1); }
-    public static ItemStack carriedView(ItemStack source) {
-        ItemStack shown=source.copy();
-        shown.setCount(Math.min(source.getCount(),Math.min(CAPACITY,source.getMaxCount())));
-        return shown;
+    public static final int CAPACITY=8, MAX_SLOTS=9;
+    private int unlocked=1, selected;
+    private final List<ItemStack> recovery=new ArrayList<>();
+    public RemoteCargoInventory() { super(MAX_SLOTS); }
+    public int unlockedSlots() { return unlocked; }
+    public int selectedSlot() { return selected; }
+    public ItemStack selectedStack() { return getStack(selected); }
+    public boolean select(int slot) {
+        if (slot<0 || slot>=unlocked) return false;
+        if (selected!=slot) { selected=slot; markDirty(); }
+        return true;
+    }
+    public boolean unlock(int count) {
+        if (count<1 || count>MAX_SLOTS) return false;
+        for (int i=count;i<MAX_SLOTS;i++) if (!getStack(i).isEmpty()) return false;
+        unlocked=count; selected=Math.min(selected,count-1); markDirty(); return true;
+    }
+    public static ItemStack carriedView(ItemStack source) { return source.copy(); }
+    public boolean dropFrom(int slot,boolean wholeStack,Predicate<ItemStack> spawn) {
+        if (slot<0 || slot>=unlocked || getStack(slot).isEmpty()) return false;
+        ItemStack original=getStack(slot),dropped=original.copy();
+        int count=wholeStack?original.getCount():1;
+        dropped.setCount(count);
+        if (!spawn.test(dropped)) return false;
+        removeStack(slot,count); markDirty(); return true;
     }
     @Override public int getMaxCountPerStack() { return CAPACITY; }
+    @Override public boolean isValid(int slot,ItemStack stack) { return slot>=0 && slot<unlocked; }
+    @Override public boolean isEmpty() { return super.isEmpty() && recovery.isEmpty(); }
     @Override public ItemStack removeStack(int slot) {
         ItemStack removed=super.removeStack(slot);
         if (!removed.isEmpty()) markDirty();
         return removed;
     }
-
     @Override public ItemStack addStack(ItemStack source) {
-        if (source.isEmpty()) return ItemStack.EMPTY;
-        // 原版 SimpleInventory 的空槽路径会截断超限堆叠，先限制本次投入量。
-        ItemStack offered=source.copy();
-        offered.setCount(Math.min(source.getCount(),Math.min(CAPACITY,source.getMaxCount())));
-        int offeredCount=offered.getCount();
-        ItemStack refused=super.addStack(offered);
         ItemStack remainder=source.copy();
-        remainder.decrement(offeredCount-refused.getCount());
+        for (boolean empty:new boolean[]{false,true}) {
+            for (int i=0;i<unlocked && !remainder.isEmpty();i++) {
+                Slot slot=new Slot(this,i,0,0);
+                if (slot.getStack().isEmpty()==empty) remainder=slot.insertStack(remainder);
+            }
+        }
         return remainder;
     }
-
-    public void returnTo(Inventory target, int slots) {
-        ItemStack remainder=getStack(0).copy();
-        // 先补已有堆叠，再占空槽；Slot 保留原版物品/NBT/数量规则。
-        for (boolean empty : new boolean[] {false,true}) {
-            for (int index=0;index<Math.min(slots,target.size()) && !remainder.isEmpty();index++) {
+    public boolean canLoad(ItemStack source) {
+        if (source.isEmpty()) return true;
+        for (int i=0;i<unlocked;i++) {
+            ItemStack stack=getStack(i);
+            if (stack.isEmpty() || ItemStack.canCombine(stack,source)
+                    && stack.getCount()<Math.min(CAPACITY,stack.getMaxCount())) return true;
+        }
+        return false;
+    }
+    public int loadFrom(Inventory source,int sourceSlot) {
+        ItemStack original=source.getStack(sourceSlot);
+        if (original.isEmpty()) return 0;
+        for (int offset=0;offset<unlocked;offset++) {
+            int index=(selected+offset)%unlocked;
+            ItemStack offered=original.copy();
+            offered.setCount(Math.min(CAPACITY,Math.min(original.getCount(),original.getMaxCount())));
+            int before=offered.getCount();
+            ItemStack remainder=new Slot(this,index,0,0).insertStack(offered);
+            int accepted=before-remainder.getCount();
+            if (accepted>0) {
+                source.removeStack(sourceSlot,accepted); source.markDirty(); select(index); return accepted;
+            }
+        }
+        return 0;
+    }
+    public void returnTo(Inventory target,int slots) { returnTo(target,slots,-1); }
+    public void returnTo(Inventory target,int slots,int preferred) {
+        for (int i=0;i<MAX_SLOTS;i++) setStack(i,returnStack(getStack(i),target,slots,preferred));
+        for (int i=0;i<recovery.size();i++) recovery.set(i,returnStack(recovery.get(i),target,slots,-1));
+        recovery.removeIf(ItemStack::isEmpty); markDirty();
+    }
+    private static ItemStack returnStack(ItemStack stack,Inventory target,int slots,int preferred) {
+        ItemStack remainder=stack.copy();
+        int limit=Math.min(slots,target.size());
+        if (preferred>=0 && preferred<limit) remainder=new Slot(target,preferred,0,0).insertStack(remainder);
+        for (boolean empty:new boolean[]{false,true}) {
+            for (int index=0;index<limit && !remainder.isEmpty();index++) {
                 Slot slot=new Slot(target,index,0,0);
                 if (slot.getStack().isEmpty()==empty) remainder=slot.insertStack(remainder);
             }
         }
-        setStack(0,remainder);
+        return remainder;
+    }
+    public List<ItemStack> takeAll() {
+        List<ItemStack> result=new ArrayList<>();
+        for (int i=0;i<MAX_SLOTS;i++) { ItemStack stack=removeStack(i); if (!stack.isEmpty()) result.add(stack); }
+        result.addAll(recovery); recovery.clear(); markDirty(); return result;
+    }
+    public void retain(ItemStack stack) {
+        ItemStack remainder=addStack(stack);
+        if (!remainder.isEmpty()) recovery.add(remainder);
+        markDirty();
+    }
+    @Override public NbtList toNbtList() {
+        NbtList items=new NbtList();
+        for (int i=0;i<MAX_SLOTS;i++) if (!getStack(i).isEmpty()) {
+            NbtCompound entry=getStack(i).writeNbt(new NbtCompound()); entry.putInt("Slot",i); items.add(entry);
+        }
+        return items;
+    }
+    @Override public void readNbtList(NbtList items) {
+        clear(); recovery.clear();
+        for (int i=0;i<items.size();i++) {
+            NbtCompound entry=items.getCompound(i); ItemStack stack=ItemStack.fromNbt(entry);
+            if (stack.isEmpty()) continue;
+            if (entry.contains("Slot",NbtElement.NUMBER_TYPE)) {
+                int index=entry.getInt("Slot");
+                if (index>=0 && index<MAX_SLOTS && getStack(index).isEmpty()) {
+                    int accepted=Math.min(stack.getCount(),Math.min(CAPACITY,stack.getMaxCount()));
+                    setStack(index,stack.split(accepted)); unlocked=Math.max(unlocked,index+1);
+                }
+            } else stack=addStack(stack);
+            if (!stack.isEmpty()) recovery.add(stack.copy());
+        }
+        markDirty();
+    }
+    public void readSaved(NbtCompound entry) {
+        unlocked=Math.max(1,Math.min(MAX_SLOTS,entry.contains("Unlocked")?entry.getInt("Unlocked"):1));
+        readNbtList(entry.getList("Items",NbtElement.COMPOUND_TYPE));
+        selected=Math.max(0,Math.min(unlocked-1,entry.getInt("Selected")));
+        NbtList extra=entry.getList("Recovery",NbtElement.COMPOUND_TYPE);
+        for (int i=0;i<extra.size();i++) { ItemStack stack=ItemStack.fromNbt(extra.getCompound(i)); if (!stack.isEmpty()) recovery.add(stack); }
+    }
+    public void writeSaved(NbtCompound entry) {
+        entry.putInt("Unlocked",unlocked); entry.putInt("Selected",selected); entry.put("Items",toNbtList());
+        NbtList extra=new NbtList();
+        for (ItemStack stack:recovery) extra.add(stack.writeNbt(new NbtCompound()));
+        if (!extra.isEmpty()) entry.put("Recovery",extra);
     }
 }

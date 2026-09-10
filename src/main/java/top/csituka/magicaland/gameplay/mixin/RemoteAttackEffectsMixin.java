@@ -1,7 +1,13 @@
 package top.csituka.magicaland.gameplay.mixin;
 
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.EntityHitResult;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.world.ServerWorld;
 import org.spongepowered.asm.mixin.Mixin;
@@ -12,6 +18,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 import top.csituka.magicaland.gameplay.remote.RemoteActionContext;
+import top.csituka.magicaland.gameplay.remote.RemoteToolServer;
 
 @Mixin(PlayerEntity.class)
 public abstract class RemoteAttackEffectsMixin {
@@ -37,6 +44,17 @@ public abstract class RemoteAttackEffectsMixin {
     @Redirect(method="attack",at=@At(value="INVOKE",target="Lnet/minecraft/entity/player/PlayerEntity;squaredDistanceTo(Lnet/minecraft/entity/Entity;)D"))
     private double magicaland$remoteSweepRange(PlayerEntity player,Entity target) {
         var tool=RemoteActionContext.toolFor(player);
+        if (tool!=null && player instanceof ServerPlayerEntity owner
+                && (!RemoteToolServer.canAttack(owner,tool,target)
+                || AttackEntityCallback.EVENT.invoker().interact(owner,tool.getWorld(),Hand.MAIN_HAND,target,new EntityHitResult(target))!=ActionResult.PASS))
+            return Double.MAX_VALUE;
         return tool==null?player.squaredDistanceTo(target):tool.squaredDistanceTo(target);
+    }
+    @Redirect(method="attack",at=@At(value="INVOKE",target="Lnet/minecraft/entity/Entity;damage(Lnet/minecraft/entity/damage/DamageSource;F)Z"))
+    private boolean magicaland$remoteHit(Entity target,DamageSource source,float amount) {
+        boolean result=target.damage(source,amount);
+        var action=RemoteActionContext.forPlayer((PlayerEntity)(Object)this);
+        if (action!=null) action.recordHit(result);
+        return result;
     }
 }

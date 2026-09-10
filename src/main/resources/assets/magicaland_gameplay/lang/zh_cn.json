@@ -16,9 +16,13 @@
   "text.magicaland_gameplay.remote.blocked": "身前没有足够的无遮挡空间",
   "text.magicaland_gameplay.remote.lost": "念力连接被遮挡，已结束远控",
   "text.magicaland_gameplay.remote.wait": "正在建立念力连接……再次按 %s 取消",
-  "text.magicaland_gameplay.remote.controls": "自由飞行 · 左键采矿／近战 · 右键交互 · %s 返回",
+  "text.magicaland_gameplay.remote.controls": "左键采矿／近战 · 右键交互 · 滚轮／数字键切槽 · %s 丢一个（Ctrl 丢整组） · %s 返回",
+  "text.magicaland_gameplay.remote.controls_short": "滚轮／数字键切槽 · %s 丢物 · %s 返回",
+  "text.magicaland_gameplay.remote.marker": "出窍",
+  "text.magicaland_gameplay.remote.returning": "正在回归本体……",
+  "text.magicaland_gameplay.remote.blind": "视野完全遮断 · 后退恢复，继续深入将回归 · %s 返回",
   "text.magicaland_gameplay.remote.edge": "接近念力范围边界（16 格）",
   "text.magicaland_gameplay.remote.cargo": "携带槽 %s / %s",
-  "text.magicaland_gameplay.remote.occupied": "唯一携带槽还有上次的物品，请先腾出背包空间，空手出窍并返回取回。",
-  "text.magicaland_gameplay.remote.cargo_retained": "背包空间不足，剩余物品已保留在出窍携带槽；腾出空间后再次出窍并返回即可取回。"
+  "text.magicaland_gameplay.remote.occupied": "出窍物品栏没有放入当前物品的空位。请腾出背包空间，空手出窍并返回取回保留物品。",
+  "text.magicaland_gameplay.remote.cargo_retained": "背包空间不足，剩余物品已保留在出窍物品栏；腾出空间后再次出窍并返回即可取回。"
 }

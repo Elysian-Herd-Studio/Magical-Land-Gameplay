@@ -8,8 +8,13 @@
     "CarrotFinishUsingMixin",
     "HorseGoalSelectorAccessor",
     "RemoteBodyActionMixin",
+    "RemoteItemPickupOwnerAccessor",
     "RemoteWorldFeedbackMixin",
-    "RemoteAttackEffectsMixin"
+    "RemoteAttackEffectsMixin",
+    "RemoteInventoryContextMixin",
+    "RemotePlayerContextMixin",
+    "RemoteLivingContextMixin",
+    "RemoteDamageSourceMixin"
   ],
   "injectors": {
     "defaultRequire": 1

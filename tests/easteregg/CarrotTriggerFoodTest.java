@@ -32,8 +32,11 @@ public final class CarrotTriggerFoodTest {
                     "both feeding and eating must use golden carrot");
         }
 
-        String source = Files.readString(Path.of(args[0],
-                "gameplay/src/main/java/top/csituka/magicaland/gameplay/easteregg/CarrotMisunderstanding.java"));
+        Path root = Path.of(args.length == 0 ? "." : args[0]);
+        Path sourceFile = root.resolve("src/main/java/top/csituka/magicaland/gameplay/easteregg/CarrotMisunderstanding.java");
+        if (!Files.isRegularFile(sourceFile))
+            sourceFile = root.resolve("gameplay/src/main/java/top/csituka/magicaland/gameplay/easteregg/CarrotMisunderstanding.java");
+        String source = Files.readString(sourceFile);
         String feedRoute = source.substring(source.indexOf("public static void recordFeeding"),
                 source.indexOf("public static void carrotFinished"));
         String eatRoute = source.substring(source.indexOf("public static void carrotFinished"),
