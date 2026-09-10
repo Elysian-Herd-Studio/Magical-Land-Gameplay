@@ -1,5 +1,7 @@
 package top.csituka.magicaland.gameplay.client;
 
+import top.csituka.magicaland.gameplay.client.sense.EarthSenseClient;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -27,6 +29,7 @@ import top.csituka.magicaland.api.client.AppearanceOverrides;
 import top.csituka.magicaland.api.client.Registration;
 import top.csituka.magicaland.gameplay.remote.RemoteAction;
 import top.csituka.magicaland.gameplay.config.GameplayClientConfig;
+import top.csituka.magicaland.gameplay.client.race.RaceClient;
 import top.csituka.magicaland.gameplay.remote.RemoteToolEntity;
 import top.csituka.magicaland.gameplay.remote.RemoteToolMath;
 import top.csituka.magicaland.gameplay.remote.RemoteToolServer;
@@ -42,7 +45,7 @@ public final class RemoteToolClient implements ClientModInitializer {
     private static Perspective previousPerspective;
     private static ItemStack[] cargo = {ItemStack.EMPTY};
     private static int waiting, selectedSlot, selectionAck = -1, lastKeys;
-    private static boolean selected, attackQueued, useQueued, returned;
+    private static boolean attackQueued, useQueued, returned;
     private static double scrollRemainder, returnStarted, returnSwitched;
     private static float stateOcclusion;
 
@@ -71,7 +74,9 @@ public final class RemoteToolClient implements ClientModInitializer {
     }
 
     @Override public void onInitializeClient() {
-        ApiVersion.requireCompatible(1,3);
+        ApiVersion.requireCompatible(1,4);
+        RaceClient.init();
+        top.csituka.magicaland.gameplay.client.sense.EarthSenseClient.init();
         wheel = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.wheel", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_R, "category.magicaland_gameplay"));
         activate = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.activate", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.magicaland_gameplay"));
         EntityRendererRegistry.register(RemoteToolServer.TYPE, RemoteToolRenderer::new);
@@ -83,7 +88,7 @@ public final class RemoteToolClient implements ClientModInitializer {
             magicOverride = AppearanceOverrides.registerMagicActivity(APPEARANCE_OWNER,0,RemoteToolClient::magicActive);
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler,client) -> {
-            reset(client); TOOLS.clear(); FACING.clear(); selected=false; closeAppearanceOverride();
+            reset(client); TOOLS.clear(); FACING.clear(); AbilityClient.reset(); closeAppearanceOverride();
         });
         ClientPlayNetworking.registerGlobalReceiver(RemoteToolServer.STATE,(client,handler,buf,sender) -> {
             try {
@@ -143,7 +148,20 @@ public final class RemoteToolClient implements ClientModInitializer {
                 : InputUtil.isKeyPressed(window,key.getCode());
     }
     public static boolean wheelHeld() { return held(wheel); }
-    public static void select() { selected=true; }
+    public static void select() { AbilityClient.select(0); }
+
+    public static void startAbility() {
+        var client = MinecraftClient.getInstance();
+        if (client.player == null || active()) return;
+        if (!RaceClient.canUseUnicornAbility()) { client.player.sendMessage(RaceClient.abilityUnavailable(), true); return; }
+        if (!ClientPlayNetworking.canSend(RemoteToolServer.CONTROL)) {
+            client.player.sendMessage(Text.translatable("text.magicaland_gameplay.remote.server"), true); return;
+        }
+        waiting=40; returned=false; selectionAck=-1; lastKeys=0;
+        selectedSlot=0; cargo=new ItemStack[] {ItemStack.EMPTY};
+        var request=PacketByteBufs.create(); request.writeByte(0).writeLong(SESSION.begin());
+        ClientPlayNetworking.send(RemoteToolServer.CONTROL,request);
+    }
 
     private static void tick(MinecraftClient client) {
         if (client.world == null || client.player == null) { reset(client); TOOLS.clear(); FACING.clear(); return; }
@@ -161,16 +179,12 @@ public final class RemoteToolClient implements ClientModInitializer {
             FACING.put(player.getUuid(),next);
         }
         FACING.keySet().retainAll(TOOLS.keySet()); RemoteHeldAnimation.retain(present);
-        while (wheel.wasPressed()) if (client.currentScreen == null && !active()) client.setScreen(new AbilityWheelScreen());
+        while (wheel.wasPressed()) if (client.currentScreen == null && !active()) {
+            EarthSenseClient.stop();
+            client.setScreen(new AbilityWheelScreen());
+        }
         while (activate.wasPressed()) if (client.currentScreen == null) {
-            if (active()) stop();
-            else if (!selected) client.player.sendMessage(Text.translatable("text.magicaland_gameplay.remote.select",wheel.getBoundKeyLocalizedText()),true);
-            else if (ClientPlayNetworking.canSend(RemoteToolServer.CONTROL)) {
-                waiting=40; returned=false; selectionAck=-1; lastKeys=0;
-                selectedSlot=0; cargo=new ItemStack[] {ItemStack.EMPTY};
-                var request=PacketByteBufs.create(); request.writeByte(0).writeLong(SESSION.begin());
-                ClientPlayNetworking.send(RemoteToolServer.CONTROL,request);
-            } else client.player.sendMessage(Text.translatable("text.magicaland_gameplay.remote.server"),true);
+            AbilityClient.activate(client, wheel.getBoundKeyLocalizedText());
         }
         if (!active()) return;
         if (!client.player.isAlive() || client.currentScreen != null || !client.isWindowFocused()) {

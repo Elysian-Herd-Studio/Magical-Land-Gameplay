@@ -167,6 +167,9 @@ public final class RemoteToolServer {
         if (active(player) || ACTIVE.size()>=64) { reject(player,request,"busy"); return; }
         int now=player.getServer().getTicks(); Integer previous=STARTS.put(player.getUuid(),now);
         if (previous!=null && now-previous<10) { reject(player,request,"busy"); return; }
+        if (!top.csituka.magicaland.gameplay.race.RaceServer.isUnicorn(player)) {
+            reject(player,request,"race"); return;
+        }
         if (!player.getCommandTags().contains(GRANT)) { reject(player,request,"grant"); return; }
         if (!eligible(player)) { reject(player,request,"stance"); return; }
         var cargo=RemoteCargoState.get(player.getServer()).inventory(player.getUuid());
@@ -204,6 +207,7 @@ public final class RemoteToolServer {
     private static void tick(RemoteSession s,int now) {
         var p=s.player; var tool=s.tool;
         if (!eligible(p) || tool.isRemoved() || p.getWorld()!=tool.getWorld() || !p.getCommandTags().contains(GRANT)
+                || !top.csituka.magicaland.gameplay.race.RaceServer.isUnicorn(p)
                 || p.getPos().squaredDistanceTo(s.origin)>.09 || p.getInventory().selectedSlot!=s.sourceSlot
                 || !ItemStack.areEqual(p.getInventory().main.get(s.sourceSlot),s.bodyStack)) {
             stop(p,RemoteProtocol.INVALID); return;

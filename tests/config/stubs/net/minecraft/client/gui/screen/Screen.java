@@ -21,4 +21,6 @@ public class Screen {
     public void renderBackground(DrawContext context){}
     public void render(DrawContext context,int mouseX,int mouseY,float delta){}
     public void close(){if(client!=null)client.setScreen(null);}
+    public void tick(){}
+    public boolean shouldPause(){return true;}
 }

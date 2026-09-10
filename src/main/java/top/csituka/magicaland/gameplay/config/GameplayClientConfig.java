@@ -15,6 +15,9 @@ public final class GameplayClientConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final System.Logger LOGGER = System.getLogger("magicaland_gameplay/config");
     private static final String VIEW = "automaticAbilityThirdPerson";
+    private static final String SENSE_FILTER = "earthSenseFilterStrength";
+    private static final String SENSE_BLUR = "earthSenseBlurStrength";
+    private static final String SENSE_AUDIO = "earthSenseAudioStrength";
     private static JsonObject values;
 
     private GameplayClientConfig() {}
@@ -50,6 +53,37 @@ public final class GameplayClientConfig {
         if (values == null) load();
         JsonObject next = values.deepCopy();
         next.addProperty(VIEW, enabled);
+        if (!store(next)) return false;
+        values = next;
+        return true;
+    }
+
+    public static float earthSenseFilterStrength() {
+        return strength(SENSE_FILTER, .8f);
+    }
+
+    public static float earthSenseBlurStrength() { return strength(SENSE_BLUR, .35f); }
+    public static float earthSenseAudioStrength() { return strength(SENSE_AUDIO, .6f); }
+    public static boolean setEarthSenseBlurStrength(float value) { return setStrength(SENSE_BLUR, value); }
+    public static boolean setEarthSenseAudioStrength(float value) { return setStrength(SENSE_AUDIO, value); }
+
+    private static float strength(String key, float fallback) {
+        if (values == null) load();
+        var value = values.get(key);
+        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) return fallback;
+        float strength = value.getAsFloat();
+        return Float.isFinite(strength) ? Math.max(0, Math.min(1, strength)) : fallback;
+    }
+
+    public static boolean setEarthSenseFilterStrength(float strength) {
+        return setStrength(SENSE_FILTER, strength);
+    }
+
+    private static boolean setStrength(String key, float strength) {
+        if (!Float.isFinite(strength) || strength < 0 || strength > 1) return false;
+        if (values == null) load();
+        JsonObject next = values.deepCopy();
+        next.addProperty(key, strength);
         if (!store(next)) return false;
         values = next;
         return true;

@@ -13,8 +13,16 @@ if(Test-Path -LiteralPath $OutputDirectory){throw 'Use a new test output directo
 $output=(New-Item -ItemType Directory -Path $OutputDirectory).FullName
 $sources=@(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'stubs') -Recurse -Filter '*.java' | Select-Object -ExpandProperty FullName)
 $sources+=Join-Path $PSScriptRoot 'GameplaySettingsTest.java'
-foreach($file in @('GameplaySettingsScreen.java','ModMenuIntegration.java')){
+$sources+=Join-Path $PSScriptRoot 'GameplaySenseFilterTest.java'
+$sources+=Join-Path $PSScriptRoot 'RaceScreensTest.java'
+foreach($file in @('GameplaySettingsScreen.java','EarthSenseSettingsScreen.java','ModMenuIntegration.java')){
     $sources+=Join-Path $repo ('src/client/java/top/csituka/magicaland/gameplay/client/'+$file)
+}
+foreach($file in @('RaceSelectionScreen.java','RaceRulesScreen.java','RaceRulesDraft.java')){
+    $sources+=Join-Path $repo ('src/client/java/top/csituka/magicaland/gameplay/client/race/'+$file)
+}
+foreach($file in @('RaceDefinition.java','RaceDefinitions.java','RaceRules.java')){
+    $sources+=Join-Path $repo ('src/main/java/top/csituka/magicaland/gameplay/race/'+$file)
 }
 foreach($file in @('config/GameplayClientConfig.java','MagicalLandGameplay.java')){
     $sources+=Join-Path $repo ('src/main/java/top/csituka/magicaland/gameplay/'+$file)
@@ -26,3 +34,7 @@ $classPath=$GsonJar+[IO.Path]::PathSeparator+$ModMenuJar
 if($LASTEXITCODE -ne 0){throw 'Gameplay settings fixture compilation failed'}
 & $java -ea -cp ($output+[IO.Path]::PathSeparator+$classPath) GameplaySettingsTest $repo $output 2>&1 | Tee-Object (Join-Path $output 'config-test.log')
 if($LASTEXITCODE -ne 0){throw 'Gameplay settings regression failed'}
+& $java -ea -cp ($output+[IO.Path]::PathSeparator+$classPath) GameplaySenseFilterTest $repo $output
+if($LASTEXITCODE -ne 0){throw 'Sense filter settings regression failed'}
+& $java -ea -cp ($output+[IO.Path]::PathSeparator+$classPath) RaceScreensTest $output
+if($LASTEXITCODE -ne 0){throw 'Race screen regression failed'}

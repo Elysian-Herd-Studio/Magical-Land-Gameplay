@@ -4,6 +4,7 @@ import net.minecraft.client.gui.tooltip.Tooltip;
 public final class ButtonWidget {
     public final int x,y,width,height;
     public int messageChanges;
+    public boolean active=true;
     public Tooltip tooltip;
     private Text message;
     private final PressAction action;

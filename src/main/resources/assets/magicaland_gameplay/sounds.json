@@ -1,0 +1,12 @@
+{
+  "sense.enter": {
+    "sounds": [
+      { "name": "magicaland_gameplay:sense/enter", "preload": true }
+    ]
+  },
+  "sense.exit": {
+    "sounds": [
+      { "name": "magicaland_gameplay:sense/exit", "preload": true }
+    ]
+  }
+}

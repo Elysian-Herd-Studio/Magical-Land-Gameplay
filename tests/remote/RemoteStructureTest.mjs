@@ -70,7 +70,7 @@ const feedback=read(main+'mixin/RemoteWorldFeedbackMixin.java');
 check(feedback.includes('WorldEventS2CPacket') && feedback.includes('PlaySoundS2CPacket') && feedback.includes('boolean missed='),'missing feedback is supplemented without duplicate broadcasts');
 for (const guard of ['actionSequence()','actionStartedTick()','occlusion()','selectedSlot()','capacity()','attackCooldown()'])
     check(entity.includes(guard),`authoritative entity presentation: ${guard}`);
-check(client.includes('ApiVersion.requireCompatible(1,3)'),'client API 1.3 contract');
+check(client.includes('ApiVersion.requireCompatible(1,4)'),'client API 1.4 contract');
 check(client.includes('setCameraEntity') && client.includes('previousPerspective'),'camera ownership and perspective recovery');
 const attach=client.slice(client.indexOf('if (camera == null && SESSION.entity() >= 0'),client.indexOf('if (camera == null) { if (--waiting<=0)'));
 check(attach.includes('previousPerspective=client.options.getPerspective()')

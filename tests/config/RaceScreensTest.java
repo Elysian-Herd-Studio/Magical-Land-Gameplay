@@ -1,0 +1,131 @@
+import java.util.Set;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.ConfirmScreen;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.text.Text;
+import top.csituka.magicaland.gameplay.client.GameplaySettingsScreen;
+import top.csituka.magicaland.gameplay.client.race.RaceClient;
+import top.csituka.magicaland.gameplay.client.race.RaceRulesDraft;
+import top.csituka.magicaland.gameplay.client.race.RaceRulesScreen;
+import top.csituka.magicaland.gameplay.client.race.RaceSelectionScreen;
+import top.csituka.magicaland.gameplay.race.RaceDefinitions;
+import top.csituka.magicaland.gameplay.race.RaceRules;
+
+public final class RaceScreensTest {
+    private static int checks;
+    private static final String U=RaceDefinitions.UNICORN_ID,P=RaceDefinitions.PEGASUS_ID,E=RaceDefinitions.EARTH_PONY_ID;
+    public static void main(String[] args) throws Exception {
+        System.setProperty("magicaland.test.configDir",java.nio.file.Files.createTempDirectory(java.nio.file.Path.of(args[0]),"race-ui-").toString());
+        var base=RaceRules.defaults();
+        var draft=new RaceRulesDraft();draft.reset(base);
+        draft.toggleRace(U);draft.toggleRace(P);
+        check(!draft.toggleRace(E),"last enabled race cannot be disabled");
+        check(draft.value().enabledRaces().equals(Set.of(E)),"rejected toggle preserves enabled races");
+        draft.reset(base);draft.cycleMode();draft.toggleAppearance();
+        var latest=new RaceRules(RaceRules.ChangeMode.LOCKED,false,Set.of(U,P),8);
+        var edited=draft.value();draft.receive(latest);
+        check(draft.value()==edited&&draft.stale(latest),"incoming rule update keeps dirty draft and its original revision");
+        check(draft.value().revision()==0,"draft does not silently rebase to new server revision");
+        draft.reset(latest);check(!draft.dirty()&&!draft.stale(latest),"explicit reload accepts current server rules");
+        draft.receive(base);check(draft.value()==base,"clean draft follows incoming rules");
+
+        var client=new MinecraftClient();var parent=new Screen(Text.empty());
+        var settings=new GameplaySettingsScreen(parent);settings.testInit(client,320,240);
+        check(!settings.widgets.get(1).active&&!settings.widgets.get(2).active,"no-server entries are disabled");
+        state(base,"",false);settings.tick();
+        check(settings.widgets.get(1).active&&settings.widgets.get(2).active,"join enables both entries");
+        settings.widgets.get(1).onPress();check(client.currentScreen instanceof RaceSelectionScreen,"race entry opens selection");
+        settings.widgets.get(2).onPress();check(client.currentScreen instanceof RaceRulesScreen,"rules entry opens rules");
+
+        var selection=new RaceSelectionScreen(parent);selection.testInit(client,320,240);client.setScreen(selection);
+        check(selection.widgets.size()==5,"three race cards, review and close");
+        check(!selection.shouldPause(),"selection keeps integrated server running for network confirmation");
+        check(selection.widgets.get(3).active,"first choice allowed under default potion rules");
+        selection.widgets.get(1).onPress();check(RaceClient.chosen==null,"clicking card makes no network choice");
+        selection.widgets.get(3).onPress();
+        check(client.currentScreen instanceof ConfirmScreen,"review requires explicit second confirmation");
+        var confirmation=(ConfirmScreen)client.currentScreen;
+        check(!confirmation.shouldPause(),"confirmation keeps server running");
+        confirmation.callback.accept(false);check(RaceClient.chosen==null,"cancel confirmation sends nothing");
+        selection.widgets.get(3).onPress();((ConfirmScreen)client.currentScreen).callback.accept(true);
+        check(P.equals(RaceClient.chosen)&&RaceClient.sentRevision==base.revision(),"confirmed choice sends selected ID and reviewed revision");
+        check(RaceClient.view().ownRace().isEmpty(),"request does not optimistically mutate identity");
+        check(!selection.widgets.get(3).active,"pending request disables resubmit");
+        long firstChoice=RaceClient.lastRequestId();
+        state(base,"",false);selection.tick();
+        check(!selection.widgets.get(3).active&&drawn(selection,"waiting"),"unrelated player snapshot cannot reject a pending choice");
+        RaceClient.reply(firstChoice+1000,"locked");selection.tick();
+        check(drawn(selection,"waiting"),"another request's denial cannot reject the current choice");
+        RaceClient.reply(firstChoice,"");selection.tick();
+        check(drawn(selection,"waiting")&&RaceClient.view().ownRace().isEmpty(),"success receipt still waits for authoritative target identity");
+        var sameCard=selection.widgets.get(1);
+        state(base,P,false);selection.tick();
+        check(selection.widgets.get(1)==sameCard,"acknowledgement updates existing widgets");
+        check(!selection.widgets.get(3).active,"potion mode disallows menu change after first choice");
+        check(drawn(selection,"changed"),"successful acknowledgement is visible");
+        state(new RaceRules(RaceRules.ChangeMode.FREE,false,base.enabledRaces(),1),P,false);selection.tick();
+        selection.widgets.get(0).onPress();check(selection.widgets.get(3).active,"free mode allows a new race");
+        selection.widgets.get(3).onPress();((ConfirmScreen)client.currentScreen).callback.accept(true);
+        long timedOutChoice=RaceClient.lastRequestId();
+        var deadline=RaceSelectionScreen.class.getDeclaredField("deadline");deadline.setAccessible(true);deadline.setLong(selection,0);
+        selection.tick();check(selection.widgets.get(3).active&&drawn(selection,"timeout"),"request timeout reports status and enables retry");
+        selection.widgets.get(3).onPress();((ConfirmScreen)client.currentScreen).callback.accept(true);
+        long retryChoice=RaceClient.lastRequestId();
+        check(retryChoice>timedOutChoice,"choice retry receives a fresh request ID");
+        RaceClient.reply(timedOutChoice,"locked");selection.tick();
+        check(drawn(selection,"waiting"),"late denial from timed-out choice cannot reject its retry");
+        RaceClient.reply(retryChoice,"stance");selection.tick();
+        check(drawn(selection,"error.stance")&&selection.widgets.get(3).active,"matching choice denial displays exact reason and enables retry");
+        selection.close();check(client.currentScreen==parent,"selection close returns to exact parent");
+
+        state(base,U,false);
+        var rules=new RaceRulesScreen(parent);rules.testInit(client,320,240);client.setScreen(rules);
+        check(!rules.shouldPause(),"rules screen keeps integrated server running");
+        check(!rules.widgets.get(0).active&&!rules.widgets.get(1).active&&!rules.widgets.get(5).active,"non-admin rules remain read-only");
+        check(rules.widgets.get(6).active,"read-only user may refresh rules");
+        state(base,U,true);rules.tick();
+        check(rules.widgets.get(0).active&&rules.widgets.get(1).active,"server permission enables editing");
+        rules.widgets.get(0).onPress();rules.widgets.get(1).onPress();
+        var originalControl=rules.widgets.get(0);var draftLabel=originalControl.getMessage();
+        check(rules.widgets.get(5).active,"changed draft can be saved");
+        state(latest,U,true);rules.tick();
+        check(rules.widgets.get(0)==originalControl,"incoming state preserves widget identity and focus target");
+        check(((Text)rules.widgets.get(0).getMessage().arguments()[0]).key().equals(((Text)draftLabel.arguments()[0]).key()),"incoming state keeps selected draft mode");
+        check(!rules.widgets.get(5).active&&drawn(rules,"rules.stale"),"stale draft requires explicit latest-rule reload");
+        rules.widgets.get(6).onPress();rules.widgets.get(1).onPress();rules.widgets.get(5).onPress();
+        check(RaceClient.saved.revision()==8,"save sends reviewed server revision");
+        check(!RaceClient.view().rules().freeAppearance(),"save does not optimistically apply server rules");
+        check(!rules.widgets.get(0).active&&!rules.widgets.get(5).active,"pending save disables edits and duplicate submit");
+        long firstSave=RaceClient.lastRequestId();
+        state(latest,U,true);rules.tick();
+        check(drawn(rules,"waiting")&&!rules.widgets.get(5).active,"unrelated player snapshot cannot reject pending rules");
+        RaceClient.reply(firstChoice,"permission");rules.tick();
+        check(drawn(rules,"waiting"),"choice receipt cannot reject a separate rules request");
+        RaceClient.reply(firstSave,"");rules.tick();
+        check(drawn(rules,"waiting")&&!RaceClient.view().rules().freeAppearance(),"success receipt still waits for matching authoritative rules");
+        state(new RaceRules(RaceClient.saved.mode(),true,RaceClient.saved.enabledRaces(),9),U,true);rules.tick();
+        check(drawn(rules,"rules_saved")&&!rules.widgets.get(5).active,"rule acknowledgement clears dirty state and shows success");
+        rules.widgets.get(1).onPress();rules.widgets.get(5).onPress();
+        RaceClient.version++;rules.tick();
+        check(drawn(rules,"waiting")&&!rules.widgets.get(5).active,"unchanged state alone is not a rules rejection");
+        long rejectedSave=RaceClient.lastRequestId();
+        RaceClient.reply(rejectedSave,"permission");rules.tick();
+        check(drawn(rules,"error.permission")&&rules.widgets.get(5).active,"matching rules rejection displays exact reason, preserves draft and enables retry");
+        rules.widgets.get(5).onPress();
+        check(RaceClient.lastRequestId()>rejectedSave,"rules retry receives a fresh request ID");
+        RaceClient.reply(rejectedSave,"stale");rules.tick();
+        check(drawn(rules,"waiting"),"late denial from earlier rules request cannot reject retry");
+        var rulesDeadline=RaceRulesScreen.class.getDeclaredField("deadline");rulesDeadline.setAccessible(true);rulesDeadline.setLong(rules,0);
+        rules.tick();check(drawn(rules,"timeout")&&rules.widgets.get(5).active,"rules timeout preserves draft and allows retry");
+        RaceClient.connected=false;RaceClient.state=null;RaceClient.version++;rules.tick();
+        check(!rules.widgets.get(0).active&&!rules.widgets.get(5).active&&drawn(rules,"no_server"),"disconnect disables controls and reports no server");
+        rules.close();check(client.currentScreen==parent,"rules close returns to exact parent");
+        for(var screen:new Screen[]{settings,selection,rules})for(var button:screen.widgets)
+            check(button.x>=0&&button.x+button.width<=320&&button.y>=0&&button.y+button.height<=240,"control stays inside minimum window");
+        System.out.println("PASS RaceScreensTest: "+checks+" interaction and draft checks (stub UI, no running game)");
+    }
+    private static void state(RaceRules rules,String race,boolean admin){RaceClient.connected=true;RaceClient.state=new RaceClient.View(rules,race,admin);RaceClient.version++;}
+    private static boolean drawn(Screen screen,String suffix){var context=new DrawContext();screen.render(context,0,0,0);return context.drawn.stream().anyMatch(t->t.key().equals("text.magicaland_gameplay.race."+suffix));}
+    private static void check(boolean condition,String reason){checks++;if(!condition)throw new AssertionError(reason);}
+}

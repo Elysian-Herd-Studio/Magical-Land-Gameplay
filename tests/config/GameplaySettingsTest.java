@@ -65,8 +65,9 @@ public final class GameplaySettingsTest {
         var parent=new Screen(Text.translatable("test.parent"));
         var screen=(GameplaySettingsScreen)new ModMenuIntegration().getModConfigScreenFactory().create(parent);
         var client=new MinecraftClient();client.setScreen(screen);screen.testInit(client,400,240);
-        check(screen.widgets.size()==2,"standalone gameplay settings has mode and done buttons");
-        var view=screen.widgets.get(0);var done=screen.widgets.get(1);
+        check(screen.widgets.size()==5,"gameplay settings has personal view, race, server rules, sense filter and done buttons");
+        var view=screen.widgets.get(0);var done=screen.widgets.get(4);
+        check(!screen.widgets.get(1).active&&!screen.widgets.get(2).active,"race and server rules are disabled without a server");
         check(view.x==45&&view.width==310&&view.height==20,"bounded centered mode button");
         check(view.tooltip.text().key().endsWith("ability_view.hint"),"mode button explains next-activation behavior");
         label(view,true,languages);
@@ -74,7 +75,7 @@ public final class GameplaySettingsTest {
             boolean enabled=!GameplayClientConfig.automaticAbilityThirdPerson();
             view.onPress();persisted(enabled);label(view,enabled,languages);
             check(view.messageChanges==click+1,"actual handler updates existing label once");
-            check(screen.additions==2&&screen.widgets.get(0)==view&&screen.widgets.get(1)==done,
+            check(screen.additions==5&&screen.widgets.get(0)==view&&screen.widgets.get(4)==done,
                     "click saves without rebuilding screen or replacing controls");
             check(client.currentScreen==screen,"mode switch stays in settings");
             check(read().get("futureOption").equals(other.get("futureOption")),"UI save preserves other own fields");

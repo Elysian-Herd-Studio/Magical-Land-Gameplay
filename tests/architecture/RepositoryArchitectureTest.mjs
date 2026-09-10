@@ -48,7 +48,7 @@ check(initializer.includes('getEnvironmentType() == EnvType.CLIENT) GameplayClie
     && !remoteClient.includes('GameplayClientConfig.load();') && !remoteClient.includes('AppearancePreferences'),
     'client-only settings migrate in main initialization before appearance client saves, with no late reload');
 check(metadata.depends.magicaland === '${appearance_compatibility}', 'Fabric dependency uses a separate compatibility range');
-check(properties.appearance_compatibility === '>=0.3.3 <0.4.0', 'API v1.3 appearance compatibility is bounded');
+check(properties.appearance_compatibility === '>=0.3.4 <0.4.0', 'API v1.4 appearance compatibility is bounded');
 check(metadata.contact.sources.endsWith('/Magical-Land-Gameplay'), 'metadata points to this repository');
 
 const classes = new Set();
@@ -62,7 +62,10 @@ for (const file of walk('src').filter(file => file.endsWith('.java'))) {
     classes.add(name);
     check(!/top\.csituka\.magicaland\.(?!(?:gameplay|api)\b)/.test(source), `appearance access only through public API: ${file}`);
     if (file.startsWith('src/main/')) {
-        check(!/^import (?:net\.minecraft\.client\.|top\.csituka\.magicaland\.(?:api\.client|gameplay\.client)\.)/m.test(source), `common code avoids client APIs: ${file}`);
+        // Yarn places vanilla Item's TooltipContext in client.item, but the type is in the common JAR.
+        const commonSource = file.endsWith('/race/RacePotionItem.java')
+            ? source.replace(/^import net\.minecraft\.client\.item\.TooltipContext;\r?$/m, '') : source;
+        check(!/^import (?:net\.minecraft\.client\.|top\.csituka\.magicaland\.(?:api\.client|gameplay\.client)\.)/m.test(commonSource), `common code avoids client APIs: ${file}`);
     }
 }
 for (const entries of Object.values(metadata.entrypoints)) {
