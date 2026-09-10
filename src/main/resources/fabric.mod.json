@@ -13,7 +13,8 @@
   "environment": "*",
   "entrypoints": {
     "main": ["top.csituka.magicaland.gameplay.MagicalLandGameplay"],
-    "client": ["top.csituka.magicaland.gameplay.client.RemoteToolClient"]
+    "client": ["top.csituka.magicaland.gameplay.client.RemoteToolClient"],
+    "modmenu": ["top.csituka.magicaland.gameplay.client.ModMenuIntegration"]
   },
   "mixins": ["magicaland.gameplay.mixins.json", {"config": "magicaland.gameplay.client.mixins.json", "environment": "client"}],
   "depends": {

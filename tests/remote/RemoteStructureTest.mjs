@@ -70,13 +70,34 @@ const feedback=read(main+'mixin/RemoteWorldFeedbackMixin.java');
 check(feedback.includes('WorldEventS2CPacket') && feedback.includes('PlaySoundS2CPacket') && feedback.includes('boolean missed='),'missing feedback is supplemented without duplicate broadcasts');
 for (const guard of ['actionSequence()','actionStartedTick()','occlusion()','selectedSlot()','capacity()','attackCooldown()'])
     check(entity.includes(guard),`authoritative entity presentation: ${guard}`);
-check(client.includes('ApiVersion.requireCompatible(1,2)'),'client API 1.2 contract');
+check(client.includes('ApiVersion.requireCompatible(1,3)'),'client API 1.3 contract');
 check(client.includes('setCameraEntity') && client.includes('previousPerspective'),'camera ownership and perspective recovery');
+const attach=client.slice(client.indexOf('if (camera == null && SESSION.entity() >= 0'),client.indexOf('if (camera == null) { if (--waiting<=0)'));
+check(attach.includes('previousPerspective=client.options.getPerspective()')
+    && attach.includes('if (GameplayClientConfig.automaticAbilityThirdPerson())')
+    && attach.includes('setPerspective(Perspective.THIRD_PERSON_BACK)'),'remote attachment preserves body perspective or switches to rear third person from local preference');
+check((client.match(/automaticAbilityThirdPerson\(/g)||[]).length===1,'view preference read only on attachment, not forced during control');
+check((client.match(/setPerspective\(/g)||[]).length===2
+    && client.includes('if (previousPerspective!=null) client.options.setPerspective(previousPerspective)')
+    && !client.includes('togglePerspectiveKey'),'perspective is set only on attach/recovery and vanilla F5 remains available');
 check(client.includes('!client.isWindowFocused()') && client.includes('currentScreen'),'focus and screen boundaries');
 check(client.includes('AppearanceOverrides.registerGaze') && client.includes('gazeOverride.close()'),'owned removable gaze override');
 check(!client.includes('registerMainHandVisibility'),'real transferred tool needs no body-item hiding');
 check(hud.includes('textures/gui/widgets.png') && hud.includes('hotbarWidth') && hud.includes('drawItemInSlot'),'vanilla hotbar style and stack metadata');
-check(renderer.includes('renderLevitatingItem') && renderer.includes('renderOrb'),'public appearance API drives orb and remote item');
+check(renderer.includes('renderLevitatingItem') && renderer.includes('renderFlame'),'public appearance API drives flame and remote item');
+const aim=read(clientRoot+'client/RemoteAim.java');
+const overlay=read(clientRoot+'mixin/client/RemoteOverlayMixin.java');
+const targeting=read(clientRoot+'mixin/client/RemoteTargetMixin.java');
+check(renderer.includes('itemSideOffset(dispatcher.getRotation(),left)') && renderer.includes('matrices.translate(side.x,side.y,side.z)'),
+    'camera-side offset is visual only and respects handedness');
+check(!/entity\.(?:setPosition|setPos|teleport|move)\s*\(/.test(renderer) && targeting.includes('tool.getCameraPosVec(delta)')
+    && targeting.includes('tool.getRotationVec(delta).multiply(3)'),'visual side offset does not alter hitbox or targeting origin');
+check(aim.includes('WorldRenderEvents.START') && aim.includes('context.projectionMatrix()') && aim.includes('context.matrixStack()')
+    && aim.includes('context.camera().getPos()') && aim.includes('client.crosshairTarget.getPos()'),'third-person aim projects real target with actual world camera matrices');
+check(aim.includes('current.world==client.world') && aim.includes('current.perspective==client.options.getPerspective()')
+    && overlay.includes('@At("HEAD")') && overlay.includes('RemoteAim.clear()') && hud.includes('RemoteAim.clear()'),'aim expires every game frame and session reset');
+check(hud.includes('RemoteAim.point()') && hud.includes('if (aim==null) return') && hud.includes('RemoteToolClient.occlusion()<.999f')
+    && hud.includes('if (visibility<.05f) return') && hud.includes('client.options.hudHidden'),'clipped, blind or hidden-HUD aim is not shown');
 check(hand.includes('AppearanceVisuals.renderFirstPerson') && hand.includes('magicaland$renderFirstPersonItem'),'scoped first-person item render');
 check(!/top\.csituka\.magicaland\.client\./.test(client+renderer+hand),'addon avoids appearance internals');
 const zh=JSON.parse(read('src/main/resources/assets/magicaland_gameplay/lang/zh_cn.json'));

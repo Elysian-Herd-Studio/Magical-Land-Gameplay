@@ -45,6 +45,7 @@ def appearanceArtifact = "top.csituka:magicaland-appearance:${project.appearance
 dependencies {
     modCompileOnly("${appearanceArtifact}:api") { transitive = false }
     modRuntimeOnly(appearanceArtifact) { transitive = false }
+    modCompileOnly("com.terraformersmc:modmenu:${project.modmenu_version}") { transitive = false }
     modRuntimeOnly("software.bernie.geckolib:geckolib-fabric-1.20.1:${project.geckolib_version}") {
         exclude group: 'net.fabricmc', module: 'fabric-loader'
         exclude group: 'net.fabricmc.fabric-api'

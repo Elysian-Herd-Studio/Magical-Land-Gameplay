@@ -1,5 +1,11 @@
 {
   "category.magicaland_gameplay": "魔法大陆 · 玩法",
+  "text.magicaland_gameplay.config.title": "魔法大陆 · 玩法设置",
+  "text.magicaland_gameplay.config.ability_view.name": "能力视角：%s",
+  "text.magicaland_gameplay.config.ability_view.third_person": "自动背面第三人称",
+  "text.magicaland_gameplay.config.ability_view.body": "沿用本体视角",
+  "text.magicaland_gameplay.config.ability_view.hint": "决定下次出窍时的初始视角。出窍期间仍可用视角切换键调整，结束后恢复本体原先的视角。更改自动保存。",
+  "text.magicaland_gameplay.config.save_failed": "保存失败，请检查配置目录权限后重试",
   "key.magicaland_gameplay.wheel": "打开能力轮盘（按住）",
   "key.magicaland_gameplay.activate": "使用能力／结束远控",
   "entity.magicaland_gameplay.remote_tool": "念力投影",

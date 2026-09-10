@@ -1,5 +1,11 @@
 {
   "category.magicaland_gameplay": "Magical Land · Gameplay",
+  "text.magicaland_gameplay.config.title": "Magical Land · Gameplay settings",
+  "text.magicaland_gameplay.config.ability_view.name": "Ability view: %s",
+  "text.magicaland_gameplay.config.ability_view.third_person": "Rear third person",
+  "text.magicaland_gameplay.config.ability_view.body": "Keep body view",
+  "text.magicaland_gameplay.config.ability_view.hint": "Sets the starting view for your next projection. You can still switch views while projecting; returning restores the body's original view. Changes save automatically.",
+  "text.magicaland_gameplay.config.save_failed": "Could not save. Check config folder permissions and retry.",
   "key.magicaland_gameplay.wheel": "Ability wheel (hold)",
   "key.magicaland_gameplay.activate": "Use ability / end remote control",
   "entity.magicaland_gameplay.remote_tool": "Telekinetic projection",

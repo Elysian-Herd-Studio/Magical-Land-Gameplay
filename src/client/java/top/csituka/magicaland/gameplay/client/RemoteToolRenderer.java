@@ -9,7 +9,6 @@ import net.minecraft.client.texture.SpriteAtlasTexture;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.*;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.MathHelper;
 import top.csituka.magicaland.gameplay.remote.RemoteToolEntity;
 import top.csituka.magicaland.api.client.Appearances;
@@ -30,12 +29,13 @@ public final class RemoteToolRenderer extends EntityRenderer<RemoteToolEntity> {
             matrices.translate(0,.1,0);
             float heading=MathHelper.lerpAngleDegrees(delta,entity.prevYaw,entity.getYaw());
             if (frame.stack().isEmpty()) {
-                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-heading));
-                AppearanceVisuals.renderOrb(matrices,color,entity.age+delta,entity.getId());
+                AppearanceVisuals.renderFlame(matrices,entity,color,delta);
                 return;
             }
             var owner=entity.getWorld().getPlayerByUuid(entity.owner());
             boolean left=owner!=null && owner.getMainArm()==net.minecraft.util.Arm.LEFT;
+            var side=RemoteAimMath.itemSideOffset(dispatcher.getRotation(),left);
+            matrices.translate(side.x,side.y,side.z);
             var mode=left
                     ? ModelTransformationMode.THIRD_PERSON_LEFT_HAND : ModelTransformationMode.THIRD_PERSON_RIGHT_HAND;
             var model=client.getItemRenderer().getModel(frame.stack(),entity.getWorld(),owner,entity.getId());

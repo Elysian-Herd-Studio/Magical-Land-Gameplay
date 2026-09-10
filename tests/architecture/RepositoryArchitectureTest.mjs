@@ -37,8 +37,18 @@ check(build.includes("gradleProperty('appearanceMavenRepo')"), 'external reposit
 const metadata = json('src/main/resources/fabric.mod.json');
 check(metadata.id === 'magicaland_gameplay', 'gameplay has its own mod ID');
 check(metadata.environment === '*', 'addon has both client and server behavior');
+check(!metadata.depends.modmenu && !metadata.recommends?.modmenu, 'Mod Menu is optional, never a server dependency');
+check(build.includes('modCompileOnly("com.terraformersmc:modmenu:${project.modmenu_version}") { transitive = false }'), 'optional Mod Menu interface compiles without bundling runtime');
+check(metadata.entrypoints.modmenu?.includes('top.csituka.magicaland.gameplay.client.ModMenuIntegration'), 'gameplay owns its Mod Menu settings entrypoint');
+const clientConfig = read('src/main/java/top/csituka/magicaland/gameplay/config/GameplayClientConfig.java');
+const remoteClient = read('src/client/java/top/csituka/magicaland/gameplay/client/RemoteToolClient.java');
+const initializer = read('src/main/java/top/csituka/magicaland/gameplay/MagicalLandGameplay.java');
+check(clientConfig.includes('resolve("magicaland-gameplay/client.json")'), 'gameplay settings use their own config namespace');
+check(initializer.includes('getEnvironmentType() == EnvType.CLIENT) GameplayClientConfig.load();')
+    && !remoteClient.includes('GameplayClientConfig.load();') && !remoteClient.includes('AppearancePreferences'),
+    'client-only settings migrate in main initialization before appearance client saves, with no late reload');
 check(metadata.depends.magicaland === '${appearance_compatibility}', 'Fabric dependency uses a separate compatibility range');
-check(properties.appearance_compatibility === '>=0.3.2 <0.4.0', 'API v1.2 appearance compatibility is bounded');
+check(properties.appearance_compatibility === '>=0.3.3 <0.4.0', 'API v1.3 appearance compatibility is bounded');
 check(metadata.contact.sources.endsWith('/Magical-Land-Gameplay'), 'metadata points to this repository');
 
 const classes = new Set();

@@ -9,9 +9,15 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import top.csituka.magicaland.gameplay.client.RemoteToolClient;
 import top.csituka.magicaland.gameplay.client.RemoteToolHud;
+import top.csituka.magicaland.gameplay.client.RemoteAim;
 
 @Mixin(GameRenderer.class)
 public abstract class RemoteOverlayMixin {
+    @Inject(method="render",at=@At("HEAD"))
+    private void remoteFrame(float delta,long startTime,boolean tick,CallbackInfo ci) {
+        RemoteAim.clear();
+    }
+
     @Inject(method="render",at=@At(value="INVOKE",target="Lnet/minecraft/client/render/DiffuseLighting;enableGuiDepthLighting()V",shift=At.Shift.AFTER))
     private void remoteVisibility(float delta,long startTime,boolean tick,CallbackInfo ci) {
         var client=MinecraftClient.getInstance();

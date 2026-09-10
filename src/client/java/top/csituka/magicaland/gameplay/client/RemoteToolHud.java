@@ -15,7 +15,8 @@ public final class RemoteToolHud {
     private static double lastFrame;
     private RemoteToolHud() {}
 
-    public static void reset() { visualOcclusion=0; lastFrame=0; }
+    public static void init() { RemoteAim.init(); }
+    public static void reset() { visualOcclusion=0; lastFrame=0; RemoteAim.clear(); }
 
     public static void renderWorldOverlay(DrawContext context,float delta) {
         var client=MinecraftClient.getInstance();
@@ -111,16 +112,21 @@ public final class RemoteToolHud {
         var camera=RemoteToolClient.camera();
         if (camera!=null && camera.getPos().distanceTo(client.player.getEyePos())>13)
             context.drawCenteredTextWithShadow(client.textRenderer,Text.translatable("text.magicaland_gameplay.remote.edge"),width/2,12,0xffcc66);
-        if (RemoteToolClient.controlling() && client.options.getPerspective().isFirstPerson()) {
-            int cx=width/2, cy=height/2;
-            context.fill(cx,cy-3,cx+1,cy-2,0xddffffff);
-            context.fill(cx-3,cy,cx-2,cy+1,0xddffffff);
-            context.fill(cx+3,cy,cx+4,cy+1,0xddffffff);
-            context.fill(cx,cy+3,cx+1,cy+4,0xddffffff);
+        if (RemoteToolClient.controlling() && RemoteToolClient.occlusion()<.999f && visualOcclusion<.999f) {
+            var aim=client.options.getPerspective().isFirstPerson() ? new RemoteAimMath.Point(.5f,.5f) : RemoteAim.point();
+            if (aim==null) return;
+            float visibility=1-RemoteVisualMath.vignette(aim.x()*2-1,aim.y()*2-1,visualOcclusion);
+            if (visibility<.05f) return;
+            int cx=Math.round(aim.x()*width), cy=Math.round(aim.y()*height);
+            int reticle=(Math.round(221*visibility)<<24)|0xffffff;
+            context.fill(cx,cy-3,cx+1,cy-2,reticle);
+            context.fill(cx-3,cy,cx-2,cy+1,reticle);
+            context.fill(cx+3,cy,cx+4,cy+1,reticle);
+            context.fill(cx,cy+3,cx+1,cy+4,reticle);
             float cooldown=camera==null ? 1 : camera.attackCooldown();
             if (!selected.isEmpty() && cooldown<1) {
-                context.fill(cx-4,cy+8,cx+4,cy+9,0x66333333);
-                context.fill(cx-4,cy+8,cx-4+(int)(8*cooldown),cy+9,0xffdddddd);
+                context.fill(cx-4,cy+8,cx+4,cy+9,(Math.round(102*visibility)<<24)|0x333333);
+                context.fill(cx-4,cy+8,cx-4+(int)(8*cooldown),cy+9,(Math.round(255*visibility)<<24)|0xdddddd);
             }
         }
     }

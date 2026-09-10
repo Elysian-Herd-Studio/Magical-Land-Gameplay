@@ -26,6 +26,7 @@ import top.csituka.magicaland.api.ApiVersion;
 import top.csituka.magicaland.api.client.AppearanceOverrides;
 import top.csituka.magicaland.api.client.Registration;
 import top.csituka.magicaland.gameplay.remote.RemoteAction;
+import top.csituka.magicaland.gameplay.config.GameplayClientConfig;
 import top.csituka.magicaland.gameplay.remote.RemoteToolEntity;
 import top.csituka.magicaland.gameplay.remote.RemoteToolMath;
 import top.csituka.magicaland.gameplay.remote.RemoteToolServer;
@@ -70,11 +71,12 @@ public final class RemoteToolClient implements ClientModInitializer {
     }
 
     @Override public void onInitializeClient() {
-        ApiVersion.requireCompatible(1,2);
+        ApiVersion.requireCompatible(1,3);
         wheel = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.wheel", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_R, "category.magicaland_gameplay"));
         activate = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.activate", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.magicaland_gameplay"));
         EntityRendererRegistry.register(RemoteToolServer.TYPE, RemoteToolRenderer::new);
         RemoteBodyRenderer.register();
+        RemoteToolHud.init();
         ClientPlayConnectionEvents.JOIN.register((handler,sender,client) -> {
             reset(client); closeAppearanceOverride();
             gazeOverride = AppearanceOverrides.registerGaze(APPEARANCE_OWNER,0,TOOLS::get);
@@ -185,7 +187,9 @@ public final class RemoteToolClient implements ClientModInitializer {
         if (camera == null && SESSION.entity() >= 0 && client.world.getEntityById(SESSION.entity()) instanceof RemoteToolEntity tool
                 && client.player.getUuid().equals(tool.owner())) {
             camera=tool; camera.localSteering=true; previousPerspective=client.options.getPerspective();
-            client.options.setPerspective(Perspective.FIRST_PERSON); client.setCameraEntity(camera);
+            if (GameplayClientConfig.automaticAbilityThirdPerson())
+                client.options.setPerspective(Perspective.THIRD_PERSON_BACK);
+            client.setCameraEntity(camera);
             SESSION.connected(); waiting=0;
         }
         if (camera == null) { if (--waiting<=0) stop(); return; }
