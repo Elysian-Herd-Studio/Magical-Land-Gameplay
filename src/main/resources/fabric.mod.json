@@ -3,7 +3,7 @@
   "id": "magicaland_gameplay",
   "version": "${version}",
   "name": "Magical Land: Gameplay",
-  "description": "Gameplay for Magical Land: golden-carrot horse encounter and an experimental remote-presence ability.",
+  "description": "A Magical Land gameplay addon centered on unicorn, pegasus and earth-pony abilities and an achievement system. In active development.",
   "authors": ["JessDaodao", "MayHooves"],
   "contact": {
     "issues": "https://github.com/Magical-Land-Official/Magical-Land-Gameplay/issues",

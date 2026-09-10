@@ -2,43 +2,48 @@
 
 [English](README_EN.md) | 简体中文
 
-Magical Land 的独立玩法 Addon。外观主模组位于 [Magical-Land](https://github.com/Magical-Land-Official/Magical-Land)，本仓库不复制模型、贴图、动画或捏脸代码。
+Magical Land 的独立玩法 Addon，以三族能力与成就系统为核心，逐步拓展小马在 Minecraft 中的玩法。模型、贴图、动画和捏脸由 [Magical Land: Appearance](https://github.com/Magical-Land-Official/Magical-Land) 提供，两个模组分别开发与发布。
 
-## 内容与安装
+## 玩法与进度
 
-- 实验性独角兽念力出窍：能力轮盘、带碰撞飞行、远程交互、唯一携带槽及本体注视表现。
-- 「不是这个意思！」金胡萝卜马匹互动彩蛋。
-- [三族核心能力方案](docs/tribe-core-abilities.md)中尚未实现的部分仍是规划。
+### 三族能力
 
-最新出窍修订仍待游戏验收，见[使用说明和限制](docs/remote-presence.md)。
+我们正在为独角兽、天马与陆马设计各具特色的能力，让每一族都有不同的探索、移动与互动方式。能力正在分阶段开发，当前功能与设计方案见[三族能力文档](docs/README.md#三族能力)。
 
-Minecraft Fabric 1.20.1。客户端和服务器均安装 Gameplay、兼容外观主模组及其依赖。外观不依赖本 Addon；同步仍由同一个外观 JAR 的服务端代码提供，没有第三个同步安装包。
+### 成就系统
 
-本仓库从 `0.1.0` 开始，初始开发目标是外观 `0.3.0`、公共 API v1，运行兼容范围见 `src/main/resources/fabric.mod.json`。两包版本号无需相同；玩家不要手动安装 API 编译 JAR。
+通过原版进度系统记录玩家在游戏中的经历与互动。目前已实现少量成就，后续会随玩法逐步扩充，详见[成就系统文档](docs/achievements.md)。
 
-Addon 注册自定义投影实体，不宣称只装服务端即可让原版客户端加入。旧一体包不能与外观主模组并装。
+当前版本为 `0.2.2`，已于 2026-09-10 完成本轮实机验收。多人及第三方模组组合需要单独验证；使用说明和验证记录见[文档目录](docs/README.md)。
+
+## 安装
+
+适用于 Minecraft **1.20.1 / Fabric**。客户端和服务器均需安装：
+
+- Fabric Loader 0.19.1 或更新版本、Fabric API。
+- Magical Land: Gameplay `0.2.2`。
+- Magical Land: Appearance `0.3.3`，以及其 GeckoLib 依赖（4.7 或更新版本）。
+
+Gameplay 当前支持 Appearance `>=0.3.3 <0.4.0`。玩家安装普通模组 JAR；升级时同步更新客户端和服务器的 Gameplay。
+
+Appearance 可以单独使用，外观同步服务端代码也包含在它的 JAR 中。从旧一体包升级时，先移除旧包再安装新包。
+
+客户端可选安装 Mod Menu，以打开玩法设置页。
+
+## 开始使用
+
+- 按住 **R** 打开能力轮盘，选中能力后松开。
+- 按 **V** 使用所选能力；持续型能力可再次按 **V** 结束。按键可在原版控制设置中调整。
+- 安装 Mod Menu 后，从「模组 → Magical Land: Gameplay → 设置」进入玩法包的客户端设置。
+
+各能力的启用条件、专用操作和测试指令见[三族能力文档](docs/README.md#三族能力)。
 
 ## 开发
 
-使用 Gradle 9.4.1 wrapper、Loom 1.16.3，Java 输出目标为 17。先在外观仓库发布开发产物：
+使用 Gradle 9.4.1 wrapper、Loom 1.16.3，Java 输出目标为 17。构建工具使用外观公共 API 1.3 的开发产物进行编译，运行时加载完整外观模组。构建入口、模块职责和存档迁移说明见[开发与仓库边界](docs/repository-boundary.md)；后续工作见[待办清单](TODO.md)。
 
-```powershell
-.\gradlew.bat publishMavenJavaPublicationToLocalDevelopmentRepository
-```
+## 作者与来源
 
-再在本仓库提供发布目录：
+项目作者：JessDaodao、MayHooves。采用 [MIT 许可](LICENSE.txt)。
 
-```powershell
-.\gradlew.bat build -PappearanceMavenRepo=C:/absolute/path/to/appearance/build/repo
-.\gradlew.bat runClient -PappearanceMavenRepo=C:/absolute/path/to/appearance/build/repo
-```
-
-也支持外观 `publishToMavenLocal`。命令仅为开发入口，不表示已构建或完成游戏验收。主 Mod 是运行依赖，编译针对公共 API；不得依赖外观源码路径、配置管理器、网络缓存或内部渲染类。
-
-两个仓库可以分开打开或放入同一个编辑器工作区；各自使用 `run/client`、`run/server`，不要共享正在使用的存档。
-
-## 来源与兼容
-
-模组 ID 保持 `magicaland_gameplay`；进度 `magicaland:not_what_i_meant`、条件 `misunderstanding`、携带槽存档 `magicaland_remote_cargo`、原通道和授权标签不变。
-
-来源为原仓库工作区保全 `d4786bd`，本仓库首次导入 `d6166f3`。保留原作者和 MIT 许可，早期完整历史仍在外观仓库。见[接口与仓库边界](docs/repository-boundary.md)。
+本仓库从原项目的 `d4786bd` 版本拆分而来，首次导入提交为 `d6166f3`。早期完整历史与原作者记录保留在外观仓库。问题反馈可提交至 [Issues](https://github.com/Magical-Land-Official/Magical-Land-Gameplay/issues)。
