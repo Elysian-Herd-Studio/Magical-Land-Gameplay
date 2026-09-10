@@ -1,0 +1,16 @@
+{
+  "parent": "minecraft:husbandry/root",
+  "display": {
+    "icon": {"item": "minecraft:carrot"},
+    "title": {"translate": "advancements.magicaland.not_what_i_meant.title"},
+    "description": {"translate": "advancements.magicaland.not_what_i_meant.description"},
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": false,
+    "hidden": true
+  },
+  "criteria": {
+    "misunderstanding": {"trigger": "minecraft:impossible"}
+  },
+  "requirements": [["misunderstanding"]]
+}

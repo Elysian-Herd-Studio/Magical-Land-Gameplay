@@ -1,0 +1,8 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "top.csituka.magicaland.gameplay.mixin.client",
+  "compatibilityLevel": "JAVA_17",
+  "client": ["RemoteInputMixin", "RemoteLookMixin", "RemoteInteractionMixin", "RemoteScrollMixin", "RemoteHandInvoker", "RemoteHandMixin"],
+  "injectors": {"defaultRequire": 1}
+}

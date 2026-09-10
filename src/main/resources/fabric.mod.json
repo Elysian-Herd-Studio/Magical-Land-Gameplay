@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "magicaland_gameplay",
+  "version": "${version}",
+  "name": "Magical Land: Gameplay",
+  "description": "Gameplay for Magical Land: golden-carrot horse encounter and an experimental remote-presence ability.",
+  "authors": ["JessDaodao", "MayHooves"],
+  "contact": {
+    "issues": "https://github.com/Magical-Land-Official/Magical-Land/issues",
+    "sources": "https://github.com/Magical-Land-Official/Magical-Land"
+  },
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["top.csituka.magicaland.gameplay.MagicalLandGameplay"],
+    "client": ["top.csituka.magicaland.gameplay.client.RemoteToolClient"]
+  },
+  "mixins": ["magicaland.gameplay.mixins.json", {"config": "magicaland.gameplay.client.mixins.json", "environment": "client"}],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}",
+    "magicaland": "${version}"
+  }
+}
