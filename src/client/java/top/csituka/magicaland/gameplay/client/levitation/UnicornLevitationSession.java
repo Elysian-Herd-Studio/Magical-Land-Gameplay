@@ -6,20 +6,21 @@ import top.csituka.magicaland.gameplay.levitation.UnicornLevitationMath;
 
 public final class UnicornLevitationSession {
     private long token, received = -1;
-    private int sent = -1, ack = -1, ascendFence, age;
-    private boolean enabled, armed, allowed, confirmedArmed;
+    private int sent = -1, ack = -1, landedInput = -1, ascendFence, age;
+    private boolean enabled, armed, allowed, confirmedArmed, airborneCast;
     private Mode confirmedMode = Mode.OFF;
     private UnicornLevitationInput input = UnicornLevitationInput.NONE;
 
     public void begin(boolean prepare) {
-        token = Math.addExact(token, 1); sent = ack = -1; ascendFence = age = 0;
+        token = Math.addExact(token, 1); sent = ack = landedInput = -1; ascendFence = age = 0;
         enabled = true; armed = prepare; allowed = confirmedArmed = false; confirmedMode = Mode.OFF;
+        airborneCast = false;
         input = UnicornLevitationInput.NONE;
     }
-    public void disarm() { armed = confirmedArmed = false; confirmedMode = Mode.OFF; }
+    public void disarm() { armed = confirmedArmed = airborneCast = false; confirmedMode = Mode.OFF; }
     public void disable() { disarm(); enabled = allowed = false; }
     public void clear() {
-        disable(); token = Math.addExact(token, 1); sent = ack = -1; received = -1;
+        disable(); token = Math.addExact(token, 1); sent = ack = landedInput = -1; received = -1;
         age = 0; input = UnicornLevitationInput.NONE;
     }
     public UnicornLevitationProtocol.Control packet(UnicornLevitationInput next) {
@@ -36,13 +37,14 @@ public final class UnicornLevitationSession {
                 || state.ackInputSequence() > sent || !state.dimension().equals(dimension)) return false;
         received = state.sequence(); ack = state.ackInputSequence(); age = 0;
         allowed = state.allowed(); confirmedArmed = state.armed(); confirmedMode = state.mode();
+        if (!allowed || !confirmedArmed) airborneCast = false;
         return true;
     }
-    public void tick() { age = Math.min(1000, age + 1); }
+    public void tick() { age = Math.min(1000, age + 1); if (expired()) airborneCast = false; }
     public Mode mode(UnicornLevitationInput current) {
         if (!enabled || !allowed || !armed || !confirmedArmed || expired()) return Mode.OFF;
         if (confirmedMode == Mode.ASCEND || confirmedMode == Mode.HOVER || confirmedMode == Mode.RECOVER) {
-            if (!armed || !confirmedArmed || !current.space() || ack < ascendFence) return Mode.OFF;
+            if (!current.space() || ack < ascendFence || ack <= landedInput) return Mode.OFF;
             return current.sneak() ? Mode.HOVER : Mode.ASCEND;
         }
         return confirmedMode;
@@ -53,8 +55,18 @@ public final class UnicornLevitationSession {
     }
     public Mode predict(UnicornLevitationInput current, boolean grounded, Mode previous, double velocityY,
                         double clearance, boolean fluidSurface, double fallDistance) {
+        boolean eligible = allowed() && armed && confirmedArmed;
+        if (!eligible) airborneCast = false;
+        if (grounded && airborneCast) {
+            airborneCast = false;
+            landedInput = sent;
+        }
         Mode requested = mode(current);
-        return UnicornLevitationMath.chooseMode(allowed() && armed && confirmedArmed, requested == Mode.ASCEND || requested == Mode.HOVER,
+        boolean confirmedCast = requested == Mode.ASCEND || requested == Mode.HOVER;
+        if (!grounded && confirmedCast) airborneCast = true;
+        // 同次空中施法可立即续按；落地后必须重新得到服务端确认。
+        boolean held = current.space() && (confirmedCast || !grounded && airborneCast);
+        return UnicornLevitationMath.chooseMode(eligible, held,
                 current.sneak(), grounded, previous, velocityY, clearance, fluidSurface, fallDistance);
     }
     public boolean enabled() { return enabled; }

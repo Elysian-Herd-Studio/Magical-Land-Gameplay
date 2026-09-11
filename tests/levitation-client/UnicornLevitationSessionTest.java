@@ -2,9 +2,13 @@ package top.csituka.magicaland.gameplay.client.levitation;
 
 import java.util.Random;
 import java.util.UUID;
+import java.util.ArrayDeque;
+import top.csituka.magicaland.gameplay.levitation.UnicornLevitationBudget;
 import top.csituka.magicaland.gameplay.levitation.UnicornLevitationMath;
 import top.csituka.magicaland.gameplay.levitation.UnicornLevitationMath.Mode;
+import top.csituka.magicaland.gameplay.levitation.UnicornLevitationMath.Motion;
 import top.csituka.magicaland.gameplay.levitation.UnicornLevitationProtocol.State;
+import top.csituka.magicaland.gameplay.levitation.UnicornLevitationRules;
 
 public final class UnicornLevitationSessionTest {
     private static int checks;
@@ -12,7 +16,8 @@ public final class UnicornLevitationSessionTest {
     private static final String WORLD = "minecraft:overworld";
     private static final UnicornLevitationInput UP = input(true, false, false, false, false, false, 0);
     public static void main(String[] args) {
-        inputs(); lifecycle(); releaseAndAck(); passive(); randomized();
+        inputs(); lifecycle(); releaseAndAck(); airborneResume(); airborneRevocation(); landingFence();
+        repeatedReleasePhysics(); passive(); randomized();
         System.out.println("UnicornLevitationSessionTest: " + checks + " checks PASS");
     }
     private static void inputs() {
@@ -113,6 +118,105 @@ public final class UnicornLevitationSessionTest {
         session.disable();
         yes(session.predict(keys,false,Mode.RECOVER,-.5,.1,false,4)==Mode.OFF,"disabled has no recovery");
     }
+    private static UnicornLevitationSession flyingSession() {
+        var session=new UnicornLevitationSession(); session.begin(true); var press=session.packet(UP);
+        session.accept(state(press.token(),1,press.sequence(),true,true,Mode.ASCEND,100),WORLD);
+        yes(session.predict(UP,false,Mode.OFF,.16,Double.NaN,false)==Mode.ASCEND,"initial airborne cast is confirmed");
+        return session;
+    }
+    private static void airborneResume() {
+        var session=flyingSession();
+        var release=session.packet(UnicornLevitationInput.NONE);
+        yes(session.predict(UnicornLevitationInput.NONE,false,Mode.ASCEND,.16,Double.NaN,false)==Mode.OFF,"release stops lift immediately");
+        var repress=session.packet(UP);
+        yes(session.mode(UP)==Mode.OFF,"wire acknowledgement still fences strict mode");
+        yes(session.predict(UP,false,Mode.OFF,-.08,Double.NaN,false)==Mode.ASCEND,"same airborne cast resumes before repress acknowledgement");
+        session.accept(state(session.token(),2,release.sequence(),true,true,Mode.OFF,100),WORLD);
+        yes(session.predict(UP,false,Mode.OFF,-.08,Double.NaN,false)==Mode.ASCEND,"late release confirmation cannot interrupt airborne repress");
+        session.accept(state(session.token(),3,repress.sequence(),true,true,Mode.OFF,100),WORLD);
+        var hover=input(true,true,false,false,false,false,0);
+        yes(session.predict(hover,false,Mode.OFF,-.2,Double.NaN,false)==Mode.RECOVER,"airborne Space+Shift first brakes a fall");
+        yes(session.predict(hover,false,Mode.RECOVER,.16,Double.NaN,false)==Mode.HOVER,"airborne recast retains hover transition");
+        yes(session.predict(UnicornLevitationInput.NONE,false,Mode.HOVER,.16,Double.NaN,false)==Mode.OFF,"cached authority never forces held lift after release");
+    }
+    private static void airborneRevocation() {
+        for(int reset=0;reset<7;reset++) {
+            var session=flyingSession(); session.packet(UnicornLevitationInput.NONE); session.packet(UP);
+            switch(reset) {
+                case 0 -> session.disarm();
+                case 1 -> session.disable();
+                case 2 -> { for(int tick=0;tick<21;tick++)session.tick(); }
+                case 3 -> session.accept(state(session.token(),2,2,false,false,Mode.OFF,100),WORLD);
+                case 4 -> session.accept(state(session.token(),2,2,true,false,Mode.OFF,100),WORLD);
+                case 5 -> session.begin(true);
+                default -> session.clear();
+            }
+            yes(session.predict(UP,false,Mode.OFF,.16,Double.NaN,false)==Mode.OFF,"airborne authority revoked by lifecycle condition "+reset);
+            if(reset==2) {
+                session.accept(state(session.token(),2,2,true,true,Mode.OFF,100),WORLD);
+                yes(session.predict(UP,false,Mode.OFF,.16,Double.NaN,false)==Mode.OFF,"lease refresh alone cannot restore expired airborne authority");
+            }
+        }
+        var session=new UnicornLevitationSession();session.begin(true);var press=session.packet(UP);
+        yes(session.predict(UP,false,Mode.ASCEND,.16,Double.NaN,false)==Mode.OFF,"previous mode cannot invent first-cast authority");
+        session.accept(state(press.token(),1,press.sequence(),true,true,Mode.OFF,100),WORLD);
+        yes(session.predict(UP,false,Mode.ASCEND,.16,Double.NaN,false)==Mode.OFF,"armed baseline is not confirmed airborne casting");
+    }
+    private static void landingFence() {
+        var session=flyingSession(); var release=session.packet(UnicornLevitationInput.NONE);
+        yes(session.predict(UnicornLevitationInput.NONE,true,Mode.OFF,0,0,false)==Mode.OFF,"landing ends continuous airborne casting");
+        session.accept(state(session.token(),2,release.sequence(),true,true,Mode.ASCEND,100),WORLD);
+        yes(session.predict(UP,false,Mode.OFF,.42,Double.NaN,false)==Mode.OFF,"late pre-landing ascent cannot authorize the next jump");
+        var press=session.packet(UP);
+        yes(session.predict(UP,false,Mode.OFF,.42,Double.NaN,false)==Mode.OFF,"new ground jump still needs its confirmation");
+        var rules=new UnicornLevitationRules();rules.input(press.token(),press.sequence(),true,0);
+        for(int tick=1;tick<=UnicornLevitationRules.CHARGE_TICKS;tick++) {
+            boolean ready=rules.ready(true,true,tick==1);
+            session.accept(state(session.token(),tick+2,press.sequence(),true,true,ready?Mode.ASCEND:Mode.OFF,100),WORLD);
+            Mode mode=session.predict(UP,tick==1,Mode.OFF,.2,Double.NaN,false);
+            yes(mode==(tick<UnicornLevitationRules.CHARGE_TICKS?Mode.OFF:Mode.ASCEND),"fresh grounded press retains seven-tick server charge "+tick);
+        }
+    }
+    private static void repeatedReleasePhysics() {
+        for(int delay=0;delay<=3;delay++) for(int releasedTicks=1;releasedTicks<=8;releasedTicks++)
+                for(int heldTicks:new int[]{1,3,20}) {
+            var session=flyingSession();
+            var pending=new ArrayDeque<DelayedState>();
+            var budget=new UnicornLevitationBudget(0,64,0,new Motion(0,.16,0));
+            budget.advance(0,0,0,0,Mode.ASCEND,64,Double.NaN);
+            Motion velocity=new Motion(0,.16,0);
+            Mode previous=Mode.ASCEND,serverMode=Mode.ASCEND;
+            int inputSequence=0;
+            long stateSequence=1;
+            double y=64;
+            for(int tick=1;tick<=400;tick++) {
+                session.tick();
+                while(!pending.isEmpty()&&pending.peekFirst().tick()<=tick)
+                    yes(session.accept(pending.removeFirst().state(),WORLD),"ordered delayed acknowledgement accepted");
+                boolean held=(tick-1)%(releasedTicks+heldTicks)>=releasedTicks;
+                var keys=held?UP:UnicornLevitationInput.NONE;
+                if(keys.needsUpdate(session.input()))inputSequence=session.packet(keys).sequence();
+                if(!held) {serverMode=Mode.OFF;budget=null;}
+                Mode mode=session.predict(keys,false,previous,velocity.y(),Double.NaN,false);
+                yes(mode==(held?Mode.ASCEND:Mode.OFF),"continuous airborne input has no extra ACK gravity tick delay "+delay+" release "+releasedTicks+" hold "+heldTicks+" tick "+tick);
+                Motion movement=mode==Mode.OFF?velocity:UnicornLevitationMath.step(velocity,0,0,0,mode,y,Double.NaN);
+                y+=movement.y();
+                if(serverMode!=Mode.OFF)
+                    yes(budget.accept(tick,0,y,0),"Session/physics/budget recast trajectory delay "+delay+" release "+releasedTicks+" hold "+heldTicks+" tick "+tick);
+                velocity=mode==Mode.OFF?new Motion(0,(movement.y()-.08)*.98,0):movement;
+                previous=mode;
+                serverMode=held?Mode.ASCEND:Mode.OFF;
+                if(serverMode!=Mode.OFF) {
+                    if(budget==null)budget=new UnicornLevitationBudget(0,y,0,movement);
+                    budget.advance(tick,0,0,0,serverMode,y,Double.NaN);
+                }
+                var confirmation=state(session.token(),++stateSequence,inputSequence,true,true,serverMode,100);
+                if(delay==0)session.accept(confirmation,WORLD);
+                else pending.addLast(new DelayedState(tick+delay,confirmation));
+            }
+        }
+    }
+    private record DelayedState(int tick,State state) {}
     private static void randomized() {
         var random=new Random(4185);
         for(int n=0;n<128;n++) {

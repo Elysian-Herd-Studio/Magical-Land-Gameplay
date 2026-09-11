@@ -22,6 +22,13 @@ public final class UnicornLevitationRulesTest {
         check(!UnicornLevitationRules.groundedPress(true, false, false, latch), "release clears pending ground edge");
         check(!rules.ready(true, false, false), "release stops");
         check(rules.ready(true, true, false), "new airborne press immediate");
+        rules.release();
+        check(rules.open(), "releasing Space preserves the armed session");
+        for (int i = 1; i < UnicornLevitationRules.CHARGE_TICKS; i++)
+            check(!rules.ready(true, true, i == 1), "release/repress before END tick still resets grounded charge " + i);
+        check(rules.ready(true, true, false), "grounded recast lifts after a fresh charge");
+        rules.release();
+        check(rules.ready(true, true, false), "same-tick airborne recast needs no ground charge");
         check(!rules.ready(false, true, false), "disarm stops");
         check(rules.input(2, 0, true, 5), "new token resets sequence");
         check(!rules.ready(true, true, true), "new token resets charge");

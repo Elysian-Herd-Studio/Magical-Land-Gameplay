@@ -22,12 +22,13 @@ public final class UnicornLevitationRules {
         return space && (wasSpace ? pending : grounded);
     }
     public boolean ready(boolean armed, boolean space, boolean onGround) {
-        if (!open || !armed || !space) { charge = 0; holding = false; return false; }
+        if (!open || !armed || !space) { release(); return false; }
         if (!holding) { holding = true; airborneStart = !onGround; }
         if (airborneStart) { charge = CHARGE_TICKS; return true; }
         charge = Math.min(CHARGE_TICKS, charge + 1);
         return charge >= CHARGE_TICKS;
     }
+    public void release() { charge = 0; holding = false; }
     public void close() { open = false; charge = 0; holding = false; }
     public long token() { return token; }
     public int sequence() { return sequence; }

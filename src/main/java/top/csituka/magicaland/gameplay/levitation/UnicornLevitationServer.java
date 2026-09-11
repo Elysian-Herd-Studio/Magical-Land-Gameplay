@@ -77,7 +77,8 @@ public final class UnicornLevitationServer {
                 : session.movementGuard.observe(session.budget.validate(now(player), x, y, z), now(player));
         if (verdict == UnicornLevitationBudget.Verdict.ACCEPT) return true;
         if (verdict == UnicornLevitationBudget.Verdict.REJECT) close(player, "movement");
-        player.networkHandler.requestTeleport(player.getX(), player.getY(), player.getZ(), 0, 0, PositionFlag.ROT);
+        // requestTeleport 接收绝对角度；ROT 只控制发包时换算为相对角度。
+        player.networkHandler.requestTeleport(player.getX(), player.getY(), player.getZ(), player.getYaw(), player.getPitch(), PositionFlag.ROT);
         if (verdict == UnicornLevitationBudget.Verdict.CORRECT) {
             session.budget.reanchor(player.getX(), player.getY(), player.getZ());
             session.motion = session.budget.expected();
@@ -105,6 +106,7 @@ public final class UnicornLevitationServer {
         session.spaceGrounded = UnicornLevitationRules.groundedPress(session.input != null && session.input.space(), input.space(),
                 player.isOnGround() || session.grounded && tick - session.observedTick <= 2, session.spaceGrounded);
         session.input = input;
+        if (!input.space()) session.rules.release();
         if (!input.enabled()) { close(player, "manual"); return; }
         String denial = invalid(player);
         if (denial == null && player.hurtTime > 0) denial = "hurt";
@@ -119,7 +121,10 @@ public final class UnicornLevitationServer {
         }
         // Releasing space is acknowledged before any further charging decision.
         if (!input.armed()) { session.mode = Mode.OFF; session.budget = null; }
-        if (!input.space() && (session.mode == Mode.ASCEND || session.mode == Mode.HOVER || session.mode == Mode.RECOVER)) session.mode = Mode.OFF;
+        if (!input.space() && (session.mode == Mode.ASCEND || session.mode == Mode.HOVER || session.mode == Mode.RECOVER)) {
+            session.mode = Mode.OFF;
+            session.budget = null;
+        }
         send(session, true, "");
     }
     private static void tick(Session session, long tick) {
