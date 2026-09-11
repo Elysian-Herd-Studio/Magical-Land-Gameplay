@@ -1,6 +1,12 @@
+<div align="center">
+
+<img src="Resources/Icon/full-缩放.png" alt="Magical Land logo" width="45%">
+
 # Magical Land Gameplay
 
 English | [简体中文](README.md)
+
+</div>
 
 Magical Land's gameplay addon focuses on pony tribe abilities and achievements. [Magical Land: Appearance](https://github.com/Magical-Land-Official/Magical-Land) provides models, textures, animations and customization. The two mods are developed and released separately.
 

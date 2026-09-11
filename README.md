@@ -1,6 +1,12 @@
+<div align="center">
+
+<img src="Resources/Icon/full-缩放.png" alt="Magical Land 标志" width="45%">
+
 # Magical Land Gameplay
 
 [English](README_EN.md) | 简体中文
+
+</div>
 
 Magical Land 的独立玩法 Addon，以三族能力与成就系统为核心，逐步拓展小马在 Minecraft 中的玩法。模型、贴图、动画和捏脸由 [Magical Land: Appearance](https://github.com/Magical-Land-Official/Magical-Land) 提供，两个模组分别开发与发布。
 

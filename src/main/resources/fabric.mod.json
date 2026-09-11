@@ -10,6 +10,7 @@
     "sources": "https://github.com/Magical-Land-Official/Magical-Land-Gameplay"
   },
   "license": "MIT",
+  "icon": "assets/magicaland_gameplay/icon.png",
   "environment": "*",
   "entrypoints": {
     "main": ["top.csituka.magicaland.gameplay.MagicalLandGameplay"],
