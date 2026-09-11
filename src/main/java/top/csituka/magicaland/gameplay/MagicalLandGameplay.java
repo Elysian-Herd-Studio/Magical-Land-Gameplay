@@ -14,5 +14,6 @@ public final class MagicalLandGameplay implements ModInitializer {
         top.csituka.magicaland.gameplay.remote.RemoteToolServer.register();
         top.csituka.magicaland.gameplay.race.RaceServer.register();
         top.csituka.magicaland.gameplay.sense.EarthSenseServer.register();
+        top.csituka.magicaland.gameplay.levitation.UnicornLevitationServer.register();
     }
 }

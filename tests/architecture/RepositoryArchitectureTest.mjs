@@ -48,7 +48,7 @@ check(initializer.includes('getEnvironmentType() == EnvType.CLIENT) GameplayClie
     && !remoteClient.includes('GameplayClientConfig.load();') && !remoteClient.includes('AppearancePreferences'),
     'client-only settings migrate in main initialization before appearance client saves, with no late reload');
 check(metadata.depends.magicaland === '${appearance_compatibility}', 'Fabric dependency uses a separate compatibility range');
-check(properties.appearance_compatibility === '>=0.3.4 <0.4.0', 'API v1.4 appearance compatibility is bounded');
+check(properties.appearance_compatibility === '>=0.3.5 <0.4.0', 'API v1.5 appearance compatibility is bounded');
 check(metadata.contact.sources.endsWith('/Magical-Land-Gameplay'), 'metadata points to this repository');
 
 const classes = new Set();

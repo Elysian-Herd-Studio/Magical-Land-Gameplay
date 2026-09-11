@@ -16,17 +16,17 @@ Choose a race when you enter a world. Changing race normally requires a potion. 
 
 Achievements use Minecraft's advancement system to record your experiences and interactions. A small number of achievements are available so far, with more planned as gameplay expands. See the [achievement guide](docs/achievements.md) for details.
 
-The current development version is `0.3.2`. Earth ponies can crouch and focus to sense nearby ground activity as soft colored clouds. Moving slowly while crouched weakens the sense; standing still restores it. See the [tremor sense guide](docs/earth-sense.md). Other guides and verification records are collected in the [documentation index](docs/README.md).
+The current development version is `0.3.3`. Unicorns can use [self-levitation](docs/unicorn-levitation.md) to lift themselves, cushion landings and hover above liquid surfaces. Earth ponies can use [tremor sense](docs/earth-sense.md) to detect nearby ground activity. Guides and verification records are collected in the [documentation index](docs/README.md).
 
 ## Installation
 
 For Minecraft **1.20.1 / Fabric**. Install the following on both client and server:
 
 - Fabric Loader 0.19.1 or newer, and Fabric API.
-- Magical Land: Gameplay `0.3.2`.
-- Magical Land: Appearance `0.3.4` and its GeckoLib dependency (4.7 or newer).
+- Magical Land: Gameplay `0.3.3`.
+- Magical Land: Appearance `0.3.5` and its GeckoLib dependency (4.7 or newer).
 
-Gameplay currently supports Appearance `>=0.3.4 <0.4.0`. Players install the regular mod JARs. Upgrade Gameplay on both client and server together.
+Gameplay currently supports Appearance `>=0.3.5 <0.4.0`. Players install the regular mod JARs. Upgrade Gameplay on both client and server together.
 
 Appearance also works on its own, with server-side appearance synchronization included in its JAR. When upgrading from the old combined mod, remove that package before installing the new ones.
 
@@ -34,16 +34,16 @@ Mod Menu is an optional client-side addition that opens the gameplay settings pa
 
 ## Getting started
 
-- Choose a race when you first enter a world. Unicorns can use telekinetic projection and earth ponies can use tremor sense. Pegasus abilities are in development.
+- Choose a race when you first enter a world. Unicorns can use telekinetic projection and self-levitation; earth ponies can use tremor sense. Pegasus abilities are in development.
 - Hold **R** to open the ability wheel, select an ability and release.
-- Press **V** to use the selected ability. For ongoing abilities, press **V** again to end them. Bindings can be changed in Minecraft's controls settings.
+- Press **V** to use the selected ability. Self-levitation enters a ready state first; hold Jump to start lifting yourself. Bindings can be changed in Minecraft's controls settings.
 - With Mod Menu installed, open “Mods → Magical Land: Gameplay → Configure” to adjust the ability camera, choose a race or view server rules.
 
 Access requirements, ability-specific controls and test commands are covered in the [tribe ability documentation](docs/README.md#三族能力).
 
 ## Development
 
-The project uses the Gradle 9.4.1 wrapper and Loom 1.16.3, with Java 17 as its output target. The build tools use Appearance's public API 1.4 artifacts for compilation; the full Appearance mod is loaded at runtime. Build commands, module responsibilities and save migration are covered in [development and repository boundaries](docs/repository-boundary.md). Planned work is tracked in [TODO](TODO.md).
+The project uses the Gradle 9.4.1 wrapper and Loom 1.16.3, with Java 17 as its output target. The build tools use Appearance's public API 1.5 artifacts for compilation; the full Appearance mod is loaded at runtime. Build commands, module responsibilities and save migration are covered in [development and repository boundaries](docs/repository-boundary.md). Planned work is tracked in [TODO](TODO.md).
 
 ## Authors and origins
 

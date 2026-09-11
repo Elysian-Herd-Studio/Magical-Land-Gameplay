@@ -1,6 +1,7 @@
 package top.csituka.magicaland.gameplay.client;
 
 import top.csituka.magicaland.gameplay.client.sense.EarthSenseClient;
+import top.csituka.magicaland.gameplay.client.levitation.UnicornLevitationClient;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -74,9 +75,10 @@ public final class RemoteToolClient implements ClientModInitializer {
     }
 
     @Override public void onInitializeClient() {
-        ApiVersion.requireCompatible(1,4);
+        ApiVersion.requireCompatible(1,5);
         RaceClient.init();
         top.csituka.magicaland.gameplay.client.sense.EarthSenseClient.init();
+        UnicornLevitationClient.init();
         wheel = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.wheel", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_R, "category.magicaland_gameplay"));
         activate = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.activate", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.magicaland_gameplay"));
         EntityRendererRegistry.register(RemoteToolServer.TYPE, RemoteToolRenderer::new);
@@ -157,6 +159,7 @@ public final class RemoteToolClient implements ClientModInitializer {
         if (!ClientPlayNetworking.canSend(RemoteToolServer.CONTROL)) {
             client.player.sendMessage(Text.translatable("text.magicaland_gameplay.remote.server"), true); return;
         }
+        UnicornLevitationClient.suspend();
         waiting=40; returned=false; selectionAck=-1; lastKeys=0;
         selectedSlot=0; cargo=new ItemStack[] {ItemStack.EMPTY};
         var request=PacketByteBufs.create(); request.writeByte(0).writeLong(SESSION.begin());

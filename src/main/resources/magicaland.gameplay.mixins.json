@@ -14,7 +14,9 @@
     "RemoteInventoryContextMixin",
     "RemotePlayerContextMixin",
     "RemoteLivingContextMixin",
-    "RemoteDamageSourceMixin"
+    "RemoteDamageSourceMixin",
+    "UnicornLevitationNetworkMixin",
+    "UnicornLevitationFallMixin"
   ],
   "injectors": {
     "defaultRequire": 1

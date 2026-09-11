@@ -24,6 +24,16 @@ public final class RaceState extends PersistentState {
 
     public RaceRules rules() { return rules; }
     public void rules(RaceRules value) { rules = value; markDirty(); }
+    public NbtCompound progress(UUID player) {
+        var entry = players.get(player);
+        return entry == null ? new NbtCompound() : entry.getCompound("Progress").copy();
+    }
+    public void progress(UUID player, NbtCompound value) {
+        var entry = players.computeIfAbsent(player, key -> new NbtCompound());
+        entry.putUuid("Owner", player);
+        entry.put("Progress", value.copy());
+        markDirty();
+    }
     public String race(UUID player) {
         NbtCompound entry = players.get(player);
         if (entry == null) return "";

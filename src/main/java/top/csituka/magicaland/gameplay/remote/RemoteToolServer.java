@@ -164,7 +164,8 @@ public final class RemoteToolServer {
     }
     private static void start(ServerPlayerEntity player,long request) {
         if (!ServerPlayNetworking.canSend(player,STATE)) return;
-        if (active(player) || ACTIVE.size()>=64) { reject(player,request,"busy"); return; }
+        if (active(player) || top.csituka.magicaland.gameplay.levitation.UnicornLevitationServer.active(player)
+                || ACTIVE.size()>=64) { reject(player,request,"busy"); return; }
         int now=player.getServer().getTicks(); Integer previous=STARTS.put(player.getUuid(),now);
         if (previous!=null && now-previous<10) { reject(player,request,"busy"); return; }
         if (!top.csituka.magicaland.gameplay.race.RaceServer.isUnicorn(player)) {
@@ -180,6 +181,7 @@ public final class RemoteToolServer {
         if (!player.getWorld().isSpaceEmpty(tool) || !clearRay(player,player.getEyePos(),tool.getEyePos())) {
             reject(player,request,"blocked"); return;
         }
+        top.csituka.magicaland.gameplay.levitation.UnicornLevitationServer.stop(player);
         RemoteSession s=new RemoteSession(player,tool,cargo,request,++nextSession);
         tool.setup(player.getUuid(),ItemStack.EMPTY); ACTIVE.put(player.getUuid(),s);
         if (!player.getServerWorld().spawnEntity(tool)) {

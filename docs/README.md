@@ -8,7 +8,7 @@
 
 [三族核心能力设计](tribe-core-abilities.md)记录独角兽、天马与陆马的玩法方向。当前状态如下：
 
-- **独角兽**：念力出窍已有可测试实现。[功能说明](remote-presence.md)包含启用条件、专用操作、携带槽、视角设置及操作范围与限制；指令式工具采集、魔法值与成长仍在设计中。
+- **独角兽**：[念力出窍](remote-presence.md)可遥控物品与互动；[自我悬浮](unicorn-levitation.md)提供按住托举、Shift 定高、落地缓冲和液面悬浮。当前暂停魔力限制，统一魔力系统、成长与指令式采集后续完善。
 - **天马**：飞行与气流操控属于设计阶段，详见三族草案。外观包的飞行动画与玩法能力分别维护。
 - **陆马**：[震动感知](earth-sense.md)采用下蹲专注、灰白微模糊视野和地面活动色团，支持慢蹲移动与停步恢复；本轮体验验收通过。后踢与地面攻击等用户补充动画后继续制作；自然共鸣仍在设计中。
 
@@ -31,4 +31,5 @@
 - 陆马能力：[基础震动感知](reports/2026-09-10-earth-sense.md)、[专注与色团效果](reports/2026-09-10-earth-sense-focus.md)、[边缘提示与过渡声](reports/2026-09-10-earth-sense-edge-audio.md)、[慢蹲感知与进退节奏](reports/2026-09-10-earth-sense-moving.md)。
 
 - 独角兽能力：[出窍重构](reports/2026-09-10-remote-rebuild.md)、[反馈修复](reports/2026-09-10-remote-followup.md)、[物品朝向与拾取修复](reports/2026-09-10-remote-pickup-pose.md)。
+- 独角兽悬浮：[初版独立检查](reports/2026-09-10-unicorn-levitation.md)、[首轮试玩修订](reports/2026-09-11-levitation-controls.md)、[开关、保护与惯性修订](reports/2026-09-11-levitation-protection.md)。后续液面缓冲修订已完成独立检查及隔离测试版构建，2026-09-11 用户同意推送当前版本；多人及兼容性验证继续保留。
 - 成就系统：具体条目的[早期实现与验收记录](carrot-misunderstanding.md)。

@@ -17,6 +17,7 @@ import top.csituka.magicaland.api.client.AppearanceOverrides;
 import top.csituka.magicaland.api.client.AppearanceVisuals;
 import top.csituka.magicaland.api.client.Registration;
 import top.csituka.magicaland.gameplay.client.AbilityClient;
+import top.csituka.magicaland.gameplay.client.levitation.UnicornLevitationClient;
 import top.csituka.magicaland.gameplay.client.RemoteToolClient;
 import top.csituka.magicaland.gameplay.race.RaceDefinitions;
 import top.csituka.magicaland.gameplay.race.RaceProtocol;
@@ -53,6 +54,10 @@ public final class RaceClient {
                 if (buffer.isReadable()) return;
                 client.execute(() -> {
                     if (client.getNetworkHandler() != handler) return;
+                    if (!java.util.Objects.equals(view == null ? null : view.ownRace(), incoming.ownRace())) {
+                        UnicornLevitationClient.suspend();
+                        UnicornLevitationClient.clear();
+                    }
                     AbilityClient.raceChanged(view == null ? null : view.ownRace(), incoming.ownRace());
                     view = incoming;
                     players = Map.copyOf(incoming.players());
@@ -97,6 +102,7 @@ public final class RaceClient {
 
     private static void clear() {
         AbilityClient.reset();
+        UnicornLevitationClient.clear();
         if (anatomyOverride != null) anatomyOverride.close();
         anatomyOverride = null;
         view = null;
