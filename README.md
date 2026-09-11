@@ -8,7 +8,7 @@
 
 </div>
 
-Magical Land 的独立玩法 Addon，以三族能力与成就系统为核心，逐步拓展小马在 Minecraft 中的玩法。模型、贴图、动画和捏脸由 [Magical Land: Appearance](https://github.com/Magical-Land-Official/Magical-Land) 提供，两个模组分别开发与发布。
+Magical Land 的独立玩法 Addon，以三族能力与成就系统为核心，逐步拓展小马在 Minecraft 中的玩法。模型、贴图、动画和捏脸由 [Magical Land: Appearance](https://github.com/Elysian-Herd-Studio/Magical-Land) 提供，两个模组分别开发与发布。
 
 ## 玩法与进度
 
@@ -55,4 +55,4 @@ Appearance 可以单独使用，外观同步服务端代码也包含在它的 JA
 
 项目作者：JessDaodao、MayHooves。采用 [MIT 许可](LICENSE.txt)。
 
-本仓库从原项目的 `d4786bd` 版本拆分而来，首次导入提交为 `d6166f3`。早期完整历史与原作者记录保留在外观仓库。问题反馈可提交至 [Issues](https://github.com/Magical-Land-Official/Magical-Land-Gameplay/issues)。
+本仓库从原项目的 `d4786bd` 版本拆分而来，首次导入提交为 `d6166f3`。早期完整历史与原作者记录保留在外观仓库。问题反馈可提交至 [Issues](https://github.com/Elysian-Herd-Studio/Magical-Land-Gameplay/issues)。

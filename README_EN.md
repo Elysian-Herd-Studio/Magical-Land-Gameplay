@@ -8,7 +8,7 @@ English | [简体中文](README.md)
 
 </div>
 
-Magical Land's gameplay addon focuses on pony tribe abilities and achievements. [Magical Land: Appearance](https://github.com/Magical-Land-Official/Magical-Land) provides models, textures, animations and customization. The two mods are developed and released separately.
+Magical Land's gameplay addon focuses on pony tribe abilities and achievements. [Magical Land: Appearance](https://github.com/Elysian-Herd-Studio/Magical-Land) provides models, textures, animations and customization. The two mods are developed and released separately.
 
 ## Gameplay and progress
 
@@ -55,4 +55,4 @@ The project uses the Gradle 9.4.1 wrapper and Loom 1.16.3, with Java 17 as its o
 
 Project authors: JessDaodao and MayHooves. Licensed under [MIT](LICENSE.txt).
 
-This repository was split from the original project at revision `d4786bd`. Its first import is commit `d6166f3`. Earlier history and original author records remain in the Appearance repository. Report problems through [Issues](https://github.com/Magical-Land-Official/Magical-Land-Gameplay/issues).
+This repository was split from the original project at revision `d4786bd`. Its first import is commit `d6166f3`. Earlier history and original author records remain in the Appearance repository. Report problems through [Issues](https://github.com/Elysian-Herd-Studio/Magical-Land-Gameplay/issues).

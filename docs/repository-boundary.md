@@ -35,7 +35,7 @@ Gameplay 0.3.3 使用 Appearance 0.3.5 / API 1.5。种族身份和服务器规�
 
 ## 来源与存档兼容
 
-来源：原仓库保全 `d4786bd`，初始导入 `d6166f3`；保留原作者和 [MIT 许可](../LICENSE.txt)，早期历史在 [Magical-Land](https://github.com/Magical-Land-Official/Magical-Land)。
+来源：原仓库保全 `d4786bd`，初始导入 `d6166f3`；保留原作者和 [MIT 许可](../LICENSE.txt)，早期历史在 [Magical-Land](https://github.com/Elysian-Herd-Studio/Magical-Land)。
 
 拆仓期间保留了模组 ID `magicaland_gameplay`、进度 `magicaland:not_what_i_meant` 与条件 `misunderstanding`、`magicaland_remote_cargo` 和 NBT 字段、远控通道/实体 ID、授权标签。
 
