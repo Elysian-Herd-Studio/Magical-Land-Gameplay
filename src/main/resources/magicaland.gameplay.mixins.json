@@ -15,6 +15,9 @@
     "RemotePlayerContextMixin",
     "RemoteLivingContextMixin",
     "RemoteDamageSourceMixin",
+    "RemoteTemptGoalMixin",
+    "RemoteTemptationsSensorMixin",
+    "RemoteTemptTaskMixin",
     "UnicornLevitationNetworkMixin",
     "UnicornLevitationFallMixin"
   ],

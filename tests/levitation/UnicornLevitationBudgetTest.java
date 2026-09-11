@@ -41,7 +41,59 @@ public final class UnicornLevitationBudgetTest {
                 check(budget.accept(tick, x, y, 0), "initial falling momentum retained " + speed);
             }
         }
+        shiftReleasePhaseSkew(); finiteTransitionMargin();
         System.out.println("PASS UnicornLevitationBudgetTest: " + checks);
+    }
+
+    private static void shiftReleasePhaseSkew() {
+        for (int phase = -2; phase <= 2; phase++) for (int batch = 1; batch <= 3; batch++)
+            for (int offset = 0; offset < batch; offset++) for (float yaw : new float[]{0, 45, -90, 170}) {
+                var budget = new UnicornLevitationBudget(0, 64, 0, Motion.ZERO);
+                Motion motion = Motion.ZERO;
+                double x = 0, y = 64, z = 0;
+                for (int tick = 0; tick < 1800; tick++) {
+                    Mode mode = transitionMode(tick);
+                    double beforeY = y;
+                    motion = step(motion, yaw, transitionForward(tick), 0, mode, y, Double.NaN);
+                    x += motion.x(); y += motion.y(); z += motion.z();
+                    if ((tick + offset) % batch == 0) check(budget.accept(tick, x, y, z),
+                            "Shift/W release inertia phase " + phase + " batch " + batch + " offset " + offset + " tick " + tick);
+                    int inputTick = Math.max(0, tick - phase);
+                    budget.advance(tick, yaw, transitionForward(inputTick), 0, transitionMode(inputTick), beforeY, Double.NaN);
+                }
+            }
+    }
+
+    private static Mode transitionMode(int tick) {
+        int phase = tick % 180;
+        return phase < 90 ? Mode.HOVER : phase < 120 ? Mode.ASCEND : Mode.HOVER;
+    }
+    private static float transitionForward(int tick) {
+        int phase = tick % 180;
+        return phase < 60 || phase >= 90 ? 1 : 0;
+    }
+    private static void finiteTransitionMargin() {
+        var budget = new UnicornLevitationBudget(0, 64, 0, Motion.ZERO);
+        check(budget.accept(0, .3, 64, 0), "one bounded asynchronous input offset is allowed");
+        for (int tick = 1; tick <= 10000; tick++) {
+            budget.advance(tick, 0, 0, 0, tick % 2 == 0 ? Mode.HOVER : Mode.ASCEND, 64, Double.NaN);
+            check(budget.accept(tick, .3, 64, 0), "stationary packets remain valid");
+        }
+        check(!budget.accept(10001, .6, 64, 0), "mode switches, waiting and zero packets cannot refill consumed horizontal margin");
+        for (double multiplier : new double[]{1.2, 2, 5}) {
+            budget = new UnicornLevitationBudget(0, 64, 0, Motion.ZERO);
+            Motion motion = Motion.ZERO;
+            double y = 64, z = 0;
+            boolean rejected = false;
+            for (int tick = 0; tick < 1800; tick++) {
+                Mode mode = transitionMode(tick);
+                motion = step(motion, 0, transitionForward(tick), 0, mode, y, Double.NaN);
+                y += motion.y(); z += motion.z() * multiplier;
+                if (!budget.accept(tick, 0, y, z)) { rejected = true; break; }
+                budget.advance(tick, 0, transitionForward(tick), 0, mode, y - motion.y(), Double.NaN);
+            }
+            check(rejected, "repeated legitimate mode switches cannot launder sustained excess speed " + multiplier);
+        }
     }
     private static void check(boolean value, String label) { checks++; if (!value) throw new AssertionError(label); }
 }

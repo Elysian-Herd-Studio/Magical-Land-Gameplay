@@ -25,6 +25,7 @@ public final class RemoteToolEntity extends Entity {
     private static final TrackedData<Integer> SELECTED = DataTracker.registerData(RemoteToolEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final TrackedData<Integer> CAPACITY = DataTracker.registerData(RemoteToolEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final TrackedData<Float> ATTACK_COOLDOWN = DataTracker.registerData(RemoteToolEntity.class, TrackedDataHandlerRegistry.FLOAT);
+    private static final TrackedData<Boolean> RETURNING = DataTracker.registerData(RemoteToolEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
     private double targetX, targetY, targetZ;
     private float targetYaw, targetPitch;
     private int lerpTicks;
@@ -38,8 +39,9 @@ public final class RemoteToolEntity extends Entity {
         dataTracker.startTracking(STACK, ItemStack.EMPTY);
         dataTracker.startTracking(ACTION,0); dataTracker.startTracking(ACTION_SEQUENCE,0);
         dataTracker.startTracking(ACTION_TICK,0L); dataTracker.startTracking(OCCLUSION,0f);
-        dataTracker.startTracking(SELECTED,0); dataTracker.startTracking(CAPACITY,1);
+        dataTracker.startTracking(SELECTED,0); dataTracker.startTracking(CAPACITY,RemoteCapabilities.CARGO_SLOTS);
         dataTracker.startTracking(ATTACK_COOLDOWN,0f);
+        dataTracker.startTracking(RETURNING,false);
     }
     public void setup(UUID owner, ItemStack stack) {
         dataTracker.set(OWNER, Optional.of(owner));
@@ -54,10 +56,15 @@ public final class RemoteToolEntity extends Entity {
     public int selectedSlot() { return dataTracker.get(SELECTED); }
     public int capacity() { return dataTracker.get(CAPACITY); }
     public float attackCooldown() { return dataTracker.get(ATTACK_COOLDOWN); }
+    public boolean returning() { return dataTracker.get(RETURNING); }
+    public void beginReturn() {
+        dataTracker.set(RETURNING,true); localSteering=false;
+        startAction(RemoteAction.NONE); setOcclusion(0); setAttackCooldown(1);
+    }
     public void setAttackCooldown(float value) { dataTracker.set(ATTACK_COOLDOWN,Math.max(0,Math.min(1,value))); }
     public void setOcclusion(float value) { dataTracker.set(OCCLUSION,Math.max(0,Math.min(1,value))); }
     public void inventoryView(RemoteCargoInventory inventory) {
-        updateStack(inventory.selectedStack()); dataTracker.set(SELECTED,inventory.selectedSlot());
+        updateStack(returning()?inventory.displayStack():inventory.selectedStack()); dataTracker.set(SELECTED,inventory.selectedSlot());
         dataTracker.set(CAPACITY,inventory.unlockedSlots());
     }
     public void startAction(RemoteAction action) {

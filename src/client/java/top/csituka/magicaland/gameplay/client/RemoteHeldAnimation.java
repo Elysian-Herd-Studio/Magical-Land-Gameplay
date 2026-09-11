@@ -16,6 +16,7 @@ public final class RemoteHeldAnimation {
     public static void clear() { STATES.clear(); }
     public static void retain(Set<UUID> present) { STATES.keySet().retainAll(present); }
     public static void predict(RemoteToolEntity tool, RemoteAction action) {
+        if (tool.returning()) return;
         State state = state(tool);
         double time = tool.getWorld().getTime();
         if (state.action == RemoteAction.MINING || state.action != RemoteAction.NONE && time - state.started < 3) return;
@@ -25,6 +26,12 @@ public final class RemoteHeldAnimation {
     public static Frame sample(RemoteToolEntity tool, ItemStack stack, int slot, float delta) {
         State state = state(tool);
         double time = tool.getWorld().getTime() + delta;
+        if (tool.returning()) {
+            state.sequence = tool.actionSequence(); state.action = RemoteAction.NONE; state.predicted = false;
+            state.previous = ItemStack.EMPTY; state.shown = stack.copy(); state.slot = slot;
+            state.equipped = Double.NEGATIVE_INFINITY;
+            return new Frame(state.shown, 0, 0, false);
+        }
         if (state.sequence != tool.actionSequence()) {
             RemoteAction action = tool.action();
             boolean keepPrediction = state.predicted && state.action == RemoteAction.SWING

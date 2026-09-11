@@ -1,7 +1,7 @@
 package top.csituka.magicaland.gameplay.remote;
 
 public final class RemoteToolMath {
-    public static final double RANGE = 16, SPEED = .3;
+    public static final double RANGE = RemoteCapabilities.MAX_RANGE, SPEED = .3;
     private RemoteToolMath() {}
     public static float wrap(float angle) {
         angle %= 360;

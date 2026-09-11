@@ -3,8 +3,10 @@ package top.csituka.magicaland.gameplay.remote;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.GlassBlock;
+import net.minecraft.block.PlantBlock;
 import net.minecraft.block.StainedGlassBlock;
 import net.minecraft.block.StainedGlassPaneBlock;
+import net.minecraft.block.SugarCaneBlock;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -32,6 +34,11 @@ public final class RemoteVisibility {
         return center.add(right.multiply(Math.cos(angle)*radius)).add(up.multiply(Math.sin(angle)*radius));
     }
     public static float occlusion(BlockView world,Entity owner,Vec3d eye,Vec3d center) {
+        if (world instanceof net.minecraft.world.World level && !level.isRegionLoaded(
+                BlockPos.ofFloored(Math.min(eye.x,center.x)-1-OCCLUSION_SAMPLE_RADIUS,
+                        Math.min(eye.y,center.y)-OCCLUSION_SAMPLE_RADIUS,Math.min(eye.z,center.z)-1-OCCLUSION_SAMPLE_RADIUS),
+                BlockPos.ofFloored(Math.max(eye.x,center.x)+1+OCCLUSION_SAMPLE_RADIUS,
+                        Math.max(eye.y,center.y)+OCCLUSION_SAMPLE_RADIUS,Math.max(eye.z,center.z)+1+OCCLUSION_SAMPLE_RADIUS))) return 1;
         int blocked=0;
         for (int i=0;i<SAMPLE_COUNT;i++) {
             Vec3d target=sample(eye,center,i);
@@ -62,6 +69,8 @@ public final class RemoteVisibility {
         if (block==Blocks.GLASS || block==Blocks.GLASS_PANE || block instanceof StainedGlassBlock
                 || block instanceof StainedGlassPaneBlock || block instanceof GlassBlock && block!=Blocks.TINTED_GLASS)
             return VoxelShapes.empty();
+        if ((block instanceof PlantBlock || block instanceof SugarCaneBlock)
+                && state.getCollisionShape(world,pos).isEmpty()) return VoxelShapes.empty();
         return state.getOutlineShape(world,pos);
     }
 }

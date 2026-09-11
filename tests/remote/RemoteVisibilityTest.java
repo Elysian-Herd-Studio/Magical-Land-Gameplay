@@ -13,6 +13,8 @@ import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.function.BooleanBiFunction;
+import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.state.property.Properties;
 import net.minecraft.block.enums.SlabType;
 import net.minecraft.world.BlockView;
@@ -63,6 +65,8 @@ public final class RemoteVisibilityTest {
         float up=RemoteVisibility.occlusion(world,owner,eye,new Vec3d(.5,4,0)); check(up>0 && up<1);
         check(RemoteVisibility.occlusion(world,owner,eye,new Vec3d(.5,4,2))==0);
         surfaceContacts(owner);
+        decorativePlants(owner);
+        solidBoundaries(owner);
         System.out.println("PASS RemoteVisibilityTest: "+checks+" checks");
     }
     private static void surfaceContacts(MarkerEntity owner) {
@@ -114,5 +118,56 @@ public final class RemoteVisibilityTest {
     }
     private static void plane(View world,int y,BlockState state) {
         for (int x=-4;x<=8;x++) for (int z=-4;z<=4;z++) world.blocks.put(new BlockPos(x,y,z),state);
+    }
+    private static void decorativePlants(MarkerEntity owner) {
+        View world=new View(); BlockPos sample=new BlockPos(2,0,0);
+        Vec3d eye=new Vec3d(.5,.5,.5),center=new Vec3d(4.5,.5,.5);
+        for (BlockState plant:new BlockState[]{
+                Blocks.GRASS.getDefaultState(),Blocks.TALL_GRASS.getDefaultState(),
+                Blocks.FERN.getDefaultState(),Blocks.LARGE_FERN.getDefaultState(),
+                Blocks.DANDELION.getDefaultState(),Blocks.POPPY.getDefaultState(),Blocks.BLUE_ORCHID.getDefaultState(),
+                Blocks.WHEAT.getDefaultState().with(Properties.AGE_7,7),
+                Blocks.CARROTS.getDefaultState().with(Properties.AGE_7,7),
+                Blocks.POTATOES.getDefaultState().with(Properties.AGE_7,7),
+                Blocks.BEETROOTS.getDefaultState().with(Properties.AGE_3,3),
+                Blocks.NETHER_WART.getDefaultState().with(Properties.AGE_3,3),
+                Blocks.SWEET_BERRY_BUSH.getDefaultState().with(Properties.AGE_3,3),
+                Blocks.SUGAR_CANE.getDefaultState(),Blocks.OAK_SAPLING.getDefaultState(),
+                Blocks.DEAD_BUSH.getDefaultState(),Blocks.SEAGRASS.getDefaultState()}) {
+            world.blocks.clear();
+            check(!plant.getOutlineShape(world,sample).isEmpty() && plant.getCollisionShape(world,sample).isEmpty());
+            check(RemoteVisibility.opticalShape(plant,world,sample).isEmpty());
+            wall(world,2,plant);
+            check(RemoteVisibility.occlusion(world,owner,eye,center)==0);
+            if (plant.isOf(Blocks.GRASS)) check(world.raycast(new RaycastContext(eye,center,RaycastContext.ShapeType.OUTLINE,
+                    RaycastContext.FluidHandling.NONE,owner)).getType()==HitResult.Type.BLOCK);
+            wall(world,3,Blocks.STONE.getDefaultState());
+            check(RemoteVisibility.occlusion(world,owner,eye,center)==1);
+        }
+    }
+    private static void solidBoundaries(MarkerEntity owner) {
+        View world=new View(); BlockPos sample=new BlockPos(2,0,0);
+        for (BlockState state:new BlockState[]{Blocks.STONE.getDefaultState(),Blocks.GRASS_BLOCK.getDefaultState(),
+                Blocks.OAK_LEAVES.getDefaultState(),Blocks.OAK_DOOR.getDefaultState().with(Properties.OPEN,false),
+                Blocks.OAK_FENCE.getDefaultState(),Blocks.OAK_FENCE_GATE.getDefaultState().with(Properties.OPEN,false),
+                Blocks.STONE_STAIRS.getDefaultState(),Blocks.STONE_SLAB.getDefaultState(),Blocks.SNOW.getDefaultState(),
+                Blocks.LILY_PAD.getDefaultState(),Blocks.PUMPKIN.getDefaultState(),Blocks.MELON.getDefaultState()}) {
+            var optical=RemoteVisibility.opticalShape(state,world,sample);
+            check(!optical.isEmpty());
+            check(!VoxelShapes.matchesAnywhere(optical,state.getOutlineShape(world,sample),BooleanBiFunction.NOT_SAME));
+        }
+        for (BlockState glass:new BlockState[]{Blocks.GLASS.getDefaultState(),Blocks.GLASS_PANE.getDefaultState(),
+                Blocks.WHITE_STAINED_GLASS.getDefaultState(),Blocks.WHITE_STAINED_GLASS_PANE.getDefaultState()})
+            check(RemoteVisibility.opticalShape(glass,world,sample).isEmpty());
+        check(!RemoteVisibility.opticalShape(Blocks.TINTED_GLASS.getDefaultState(),world,sample).isEmpty());
+        Vec3d eye=new Vec3d(.5,.5,.5),center=new Vec3d(4.5,.5,.5);
+        for (BlockState solid:new BlockState[]{Blocks.OAK_LEAVES.getDefaultState(),Blocks.GRASS_BLOCK.getDefaultState(),
+                Blocks.OAK_DOOR.getDefaultState().with(Properties.HORIZONTAL_FACING,Direction.EAST).with(Properties.OPEN,false)}) {
+            world.blocks.clear(); wall(world,2,solid);
+            check(RemoteVisibility.occlusion(world,owner,eye,center)==1);
+        }
+    }
+    private static void wall(View world,int x,BlockState state) {
+        for (int y=-3;y<=3;y++) for (int z=-3;z<=3;z++) world.blocks.put(new BlockPos(x,y,z),state);
     }
 }

@@ -8,7 +8,7 @@ public final class RemoteSessionRulesTest {
         return rules.visibility(coverage,x,y,z,dx,dy,dz,ix,iy,iz,1,0,0);
     }
     private static RemoteSessionRules blind() {
-        var rules=new RemoteSessionRules();
+        var rules=new RemoteSessionRules(false);
         check(!see(rules,.8f,0,0,0,.1,0,0,.3,0,0));
         check(!see(rules,1,.1,0,0,.1,0,0,.3,0,0)); return rules;
     }
@@ -33,12 +33,12 @@ public final class RemoteSessionRulesTest {
         check(!see(rules,.96f,.9,0,0,0,0,0,0,0,0));
         check(rules.phase()==RemoteSessionRules.Phase.FADING);
         check(!see(rules,0,.9,0,0,0,0,0,0,0,0) && rules.phase()==RemoteSessionRules.Phase.ACTIVE);
-        var still=new RemoteSessionRules();
+        var still=new RemoteSessionRules(false);
         check(!see(still,0,3,0,0,0,0,0,0,0,0)); check(!see(still,1,3,0,0,0,0,0,0,0,0));
         check(!see(still,1,3,2,0,0,2,0,0,.3,0));
         check(!see(still,1,2,2,0,-1,0,0,-.3,0,0));
         check(see(still,1,4,2,0,2,0,0,.3,0,0));
-        var up=new RemoteSessionRules();
+        var up=new RemoteSessionRules(false);
         check(!up.visibility(.9f,0,0,0,0,.1,0,0,.3,0,0,1,0));
         check(!up.visibility(1,0,.1,0,0,.1,0,0,.3,0,0,1,0));
         check(!up.visibility(1,2,.1,0,2,0,0,.3,0,0,0,1,0));
@@ -48,6 +48,19 @@ public final class RemoteSessionRulesTest {
         check(up.close() && !up.close() && !up.acceptInput(3));
         check(!up.visibility(0,0,0,0,0,0,0,0,0,0,1,0,0));
         check(up.phase()==RemoteSessionRules.Phase.CLOSED);
+        check(!up.canInteract());
+        var echo=new RemoteSessionRules();
+        check(echo.canInteract());
+        check(!see(echo,.8f,0,0,0,.1,0,0,.3,0,0) && echo.canInteract());
+        for (int i=0;i<10000;i++) {
+            check(!see(echo,1,i*.3,i*.1,i*.2,.3,.1,.2,.3,.1,.2));
+            check(echo.phase()==RemoteSessionRules.Phase.BLIND && echo.canInteract());
+        }
+        check(!see(echo,.5f,0,0,0,0,0,0,0,0,0) && echo.phase()==RemoteSessionRules.Phase.FADING);
+        check(!see(echo,0,0,0,0,0,0,0,0,0,0) && echo.phase()==RemoteSessionRules.Phase.ACTIVE);
+        check(echo.close() && !echo.canInteract());
+        var basic=blind(); check(!basic.canInteract());
+        check(!see(basic,0,0,0,0,0,0,0,0,0,0) && basic.canInteract());
         System.out.println("PASS RemoteSessionRulesTest: "+checks+" checks");
     }
 }

@@ -4,6 +4,7 @@ public final class RemoteToolMathTest {
     private static int checks;
     private static void check(boolean value) { checks++; if (!value) throw new AssertionError("check "+checks); }
     public static void main(String[] args) {
+        check(RemoteToolMath.RANGE==128);
         for (int yaw=-540;yaw<=540;yaw+=15) for (int pitch=-89;pitch<=89;pitch+=10) for (int keys=0;keys<256;keys++) {
             double[] d=RemoteToolMath.movement(yaw,pitch,keys);
             double length=Math.sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2]);

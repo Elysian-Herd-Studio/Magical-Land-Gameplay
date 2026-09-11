@@ -18,7 +18,10 @@ public abstract class UnicornLevitationNetworkMixin {
     @Shadow private boolean floating;
     @Inject(method = "onPlayerMove", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/NetworkThreadUtils;forceMainThread(Lnet/minecraft/network/packet/Packet;Lnet/minecraft/network/listener/PacketListener;Lnet/minecraft/server/world/ServerWorld;)V", shift = At.Shift.AFTER), cancellable = true)
     private void magicaland$validateLevitation(PlayerMoveC2SPacket packet, CallbackInfo ci) {
-        if (requestedTeleportPos == null && !UnicornLevitationServer.allowMove(player, packet)) ci.cancel();
+        if (requestedTeleportPos == null && !UnicornLevitationServer.allowMove(player, packet)) {
+            if (UnicornLevitationServer.physicsActive(player)) floating = false;
+            ci.cancel();
+        }
     }
     @Inject(method = "onPlayerMove", at = @At("RETURN"))
     private void magicaland$controlledFlight(PlayerMoveC2SPacket packet, CallbackInfo ci) {

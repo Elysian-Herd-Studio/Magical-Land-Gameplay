@@ -37,7 +37,20 @@ public final class UnicornLevitationIntegrationTest {
         check(server.contains("UnicornLevitationGround.find(player.getWorld(), player, controlMotion)") && !server.contains("player.isOnGround() ? null"), "grounded shore can probe ahead");
         check(server.contains("PENDING.compute") && server.contains("MAX_SESSIONS") && server.contains("rules.expired"), "bounded queue/sessions/lease");
         check(!server.contains(".progress("), "ability cannot create or change race progress");
-        check(server.contains("session.budget.advance") && server.contains("session.budget.accept"), "shared-math finite packet credit");
+        check(server.contains("session.budget.advance") && server.contains("session.budget.validate"), "shared-math finite packet credit");
+        check(server.contains("verdict == UnicornLevitationBudget.Verdict.REJECT) close(player, \"movement\")"),
+                "only severe or sustained anomalies close the session");
+        check(server.contains("session.budget.reanchor(player.getX(), player.getY(), player.getZ())")
+                && server.contains("session.motion = session.budget.expected()"), "correction uses confirmed position and trusted inertia");
+        check(server.indexOf("player.networkHandler.requestTeleport") < server.indexOf("send(session, true, UnicornLevitationProtocol.MOVEMENT_CORRECTION, true)"),
+                "correction state restores inertial velocity after the vanilla teleport packet");
+        check(server.contains("0, 0, PositionFlag.ROT") && server.contains("session.movementGuard.observe"),
+                "correction preserves client view rotation and counts sustained errors");
+        check(network.contains("physicsActive(player)) floating = false;"), "early corrective cancellation cannot leave vanilla floating kick flag set");
+        String client = Files.readString(Path.of(args[1]).resolve("src/client/java/top/csituka/magicaland/gameplay/client/levitation/UnicornLevitationClient.java"));
+        check(client.contains("MOVEMENT_CORRECTION.equals(state.reason())") && client.contains("SESSION.allowed() && SESSION.armed() && scope(client)")
+                && client.contains("client.player.setVelocity(state.velocityX(), state.velocityY(), state.velocityZ())"),
+                "only an acknowledged valid owner correction restores velocity without rearming");
         check(server.indexOf("PENDING.remove(player.getUuid())") < server.indexOf("if (!physicsActive(player)) return true"), "queued controls handled before move validation");
         check(!server.contains("player.isCreative()") && !server.contains("getAbilities().allowFlying") && server.contains("getAbilities().flying"), "creative allowed without native flight overlap");
         String main = Files.readString(root.resolve("java/top/csituka/magicaland/gameplay/MagicalLandGameplay.java"));

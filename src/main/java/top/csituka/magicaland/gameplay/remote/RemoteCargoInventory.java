@@ -12,13 +12,20 @@ import net.minecraft.nbt.NbtList;
 import net.minecraft.screen.slot.Slot;
 
 public final class RemoteCargoInventory extends SimpleInventory {
-    public static final int CAPACITY=8, MAX_SLOTS=9;
-    private int unlocked=1, selected;
+    public static final int CAPACITY=RemoteCapabilities.CARGO_STACK_LIMIT, MAX_SLOTS=9;
+    public static final int SETTLEMENT_SPAWN_LIMIT=64;
+    private int unlocked=RemoteCapabilities.CARGO_SLOTS, selected;
     private final List<ItemStack> recovery=new ArrayList<>();
     public RemoteCargoInventory() { super(MAX_SLOTS); }
     public int unlockedSlots() { return unlocked; }
     public int selectedSlot() { return selected; }
     public ItemStack selectedStack() { return getStack(selected); }
+    public ItemStack displayStack() {
+        if (!selectedStack().isEmpty()) return selectedStack().copy();
+        for (int slot=0;slot<MAX_SLOTS;slot++) if (!getStack(slot).isEmpty()) return getStack(slot).copy();
+        for (ItemStack stack:recovery) if (!stack.isEmpty()) return stack.copy();
+        return ItemStack.EMPTY;
+    }
     public boolean select(int slot) {
         if (slot<0 || slot>=unlocked) return false;
         if (selected!=slot) { selected=slot; markDirty(); }
@@ -83,7 +90,13 @@ public final class RemoteCargoInventory extends SimpleInventory {
     }
     public void returnTo(Inventory target,int slots) { returnTo(target,slots,-1); }
     public void returnTo(Inventory target,int slots,int preferred) {
-        for (int i=0;i<MAX_SLOTS;i++) setStack(i,returnStack(getStack(i),target,slots,preferred));
+        returnTo(target,slots,preferred,-1);
+    }
+    public void returnTo(Inventory target,int slots,int preferred,int sourceCargoSlot) {
+        if (sourceCargoSlot>=0 && sourceCargoSlot<MAX_SLOTS)
+            setStack(sourceCargoSlot,returnStack(getStack(sourceCargoSlot),target,slots,preferred));
+        for (int i=0;i<MAX_SLOTS;i++) if (i!=sourceCargoSlot)
+            setStack(i,returnStack(getStack(i),target,slots,preferred));
         for (int i=0;i<recovery.size();i++) recovery.set(i,returnStack(recovery.get(i),target,slots,-1));
         recovery.removeIf(ItemStack::isEmpty); markDirty();
     }
@@ -98,6 +111,30 @@ public final class RemoteCargoInventory extends SimpleInventory {
             }
         }
         return remainder;
+    }
+    public int dropRemainder(Predicate<ItemStack> spawn) {
+        int attempts=0,dropped=0;
+        for (int slot=0;slot<MAX_SLOTS && attempts<SETTLEMENT_SPAWN_LIMIT;slot++) {
+            while (!getStack(slot).isEmpty() && attempts<SETTLEMENT_SPAWN_LIMIT) {
+                ItemStack original=getStack(slot),offered=original.copy();
+                int count=Math.min(original.getCount(),Math.min(CAPACITY,original.getMaxCount()));
+                offered.setCount(count); attempts++;
+                if (!spawn.test(offered)) break;
+                removeStack(slot,count); markDirty(); dropped++;
+            }
+        }
+        for (var entries=recovery.iterator();entries.hasNext() && attempts<SETTLEMENT_SPAWN_LIMIT;) {
+            ItemStack original=entries.next();
+            while (!original.isEmpty() && attempts<SETTLEMENT_SPAWN_LIMIT) {
+                ItemStack offered=original.copy();
+                int count=Math.min(original.getCount(),Math.min(CAPACITY,original.getMaxCount()));
+                offered.setCount(count); attempts++;
+                if (!spawn.test(offered)) break;
+                original.decrement(count); markDirty(); dropped++;
+            }
+            if (original.isEmpty()) entries.remove();
+        }
+        return dropped;
     }
     public List<ItemStack> takeAll() {
         List<ItemStack> result=new ArrayList<>();
@@ -133,7 +170,8 @@ public final class RemoteCargoInventory extends SimpleInventory {
         markDirty();
     }
     public void readSaved(NbtCompound entry) {
-        unlocked=Math.max(1,Math.min(MAX_SLOTS,entry.contains("Unlocked")?entry.getInt("Unlocked"):1));
+        unlocked=Math.max(RemoteCapabilities.CARGO_SLOTS,
+                Math.max(1,Math.min(MAX_SLOTS,entry.contains("Unlocked")?entry.getInt("Unlocked"):1)));
         readNbtList(entry.getList("Items",NbtElement.COMPOUND_TYPE));
         selected=Math.max(0,Math.min(unlocked-1,entry.getInt("Selected")));
         NbtList extra=entry.getList("Recovery",NbtElement.COMPOUND_TYPE);
@@ -143,6 +181,6 @@ public final class RemoteCargoInventory extends SimpleInventory {
         entry.putInt("Unlocked",unlocked); entry.putInt("Selected",selected); entry.put("Items",toNbtList());
         NbtList extra=new NbtList();
         for (ItemStack stack:recovery) extra.add(stack.writeNbt(new NbtCompound()));
-        if (!extra.isEmpty()) entry.put("Recovery",extra);
+        if (!extra.isEmpty()) entry.put("Recovery",extra); else entry.remove("Recovery");
     }
 }

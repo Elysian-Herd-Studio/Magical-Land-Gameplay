@@ -11,6 +11,7 @@ import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
+import net.minecraft.network.packet.s2c.play.PositionFlag;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.math.Vec3d;
 import top.csituka.magicaland.gameplay.race.RaceServer;
@@ -72,9 +73,16 @@ public final class UnicornLevitationServer {
         var session = SESSIONS.get(player.getUuid());
         double x = packet.getX(player.getX()), y = packet.getY(player.getY()), z = packet.getZ(player.getZ());
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return true;
-        if (session.budget != null && session.budget.accept(now(player), x, y, z)) return true;
-        close(player, "movement");
-        player.networkHandler.requestTeleport(player.getX(), player.getY(), player.getZ(), player.getYaw(), player.getPitch());
+        var verdict = session.budget == null ? UnicornLevitationBudget.Verdict.REJECT
+                : session.movementGuard.observe(session.budget.validate(now(player), x, y, z), now(player));
+        if (verdict == UnicornLevitationBudget.Verdict.ACCEPT) return true;
+        if (verdict == UnicornLevitationBudget.Verdict.REJECT) close(player, "movement");
+        player.networkHandler.requestTeleport(player.getX(), player.getY(), player.getZ(), 0, 0, PositionFlag.ROT);
+        if (verdict == UnicornLevitationBudget.Verdict.CORRECT) {
+            session.budget.reanchor(player.getX(), player.getY(), player.getZ());
+            session.motion = session.budget.expected();
+            send(session, true, UnicornLevitationProtocol.MOVEMENT_CORRECTION, true);
+        }
         return false;
     }
     public static boolean protectsFallDamage(ServerPlayerEntity player) {
@@ -104,6 +112,7 @@ public final class UnicornLevitationServer {
                 >= UnicornLevitationRules.MAX_SESSIONS) denial = "busy";
         if (denial != null) { close(player, denial); return; }
         if (!wasOpen) {
+            session.movementGuard.reset();
             session.dimension = dimension(player); session.position = player.getPos(); session.observedTick = tick;
             session.motion = motion(player.getVelocity()); session.mode = Mode.OFF; session.budget = null;
             session.health = player.getHealth(); session.absorption = player.getAbsorptionAmount();
@@ -196,6 +205,7 @@ public final class UnicornLevitationServer {
     private static final class Session {
         final ServerPlayerEntity player;
         final UnicornLevitationRules rules;
+        final UnicornLevitationMovementGuard movementGuard = new UnicornLevitationMovementGuard();
         UnicornLevitationProtocol.Control input;
         String dimension;
         String closeReason = "manual";

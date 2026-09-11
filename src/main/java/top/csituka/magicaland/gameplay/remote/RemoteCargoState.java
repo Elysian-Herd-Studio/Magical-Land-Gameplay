@@ -34,7 +34,8 @@ public final class RemoteCargoState extends PersistentState {
     @Override public NbtCompound writeNbt(NbtCompound nbt) {
         NbtList entries=new NbtList();
         inventories.forEach((owner,inventory) -> {
-            if (inventory.isEmpty() && inventory.unlockedSlots()==1) return;
+            if (inventory.isEmpty() && inventory.unlockedSlots()==RemoteCapabilities.CARGO_SLOTS
+                    && inventory.selectedSlot()==0) return;
             NbtCompound entry=new NbtCompound();
             entry.putUuid("Owner",owner); inventory.writeSaved(entry); entries.add(entry);
         });

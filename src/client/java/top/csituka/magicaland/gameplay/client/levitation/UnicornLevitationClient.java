@@ -189,6 +189,9 @@ public final class UnicornLevitationClient {
             if (!state.allowed()) {
                 SESSION.disable(); predicted = Mode.OFF; nativeControl = false;
                 if (wasEnabled) retry = Math.max(retry, 20);
+            } else if (UnicornLevitationProtocol.MOVEMENT_CORRECTION.equals(state.reason())
+                    && SESSION.allowed() && SESSION.armed() && scope(client)) {
+                client.player.setVelocity(state.velocityX(), state.velocityY(), state.velocityZ());
             }
         }
         VISUALS.put(state.actor(), new Visual(state, tick));

@@ -32,6 +32,13 @@ public final class RemoteToolRenderer extends EntityRenderer<RemoteToolEntity> {
                 AppearanceVisuals.renderFlame(matrices,entity,color,delta);
                 return;
             }
+            if (entity.returning()) {
+                matrices.push();
+                try {
+                    matrices.scale(.55f,.55f,.55f);
+                    AppearanceVisuals.renderFlame(matrices,entity,color,delta);
+                } finally { matrices.pop(); }
+            }
             var owner=entity.getWorld().getPlayerByUuid(entity.owner());
             boolean left=owner!=null && owner.getMainArm()==net.minecraft.util.Arm.LEFT;
             var side=RemoteAimMath.itemSideOffset(dispatcher.getRotation(),left);

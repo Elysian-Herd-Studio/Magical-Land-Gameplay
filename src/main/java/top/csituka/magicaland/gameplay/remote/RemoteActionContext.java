@@ -38,7 +38,8 @@ public final class RemoteActionContext implements AutoCloseable {
     public double attributeValue(EntityAttribute attribute) {
         EntityAttributeInstance original=player.getAttributeInstance(attribute);
         if (original==null) return attribute.getDefaultValue();
-        return RemoteAttributes.project(original,session.sourceItem,session.bodyStack,stack());
+        double value=RemoteAttributes.project(original,session.sourceItem,session.bodyStack,stack());
+        return attribute==EntityAttributes.GENERIC_ATTACK_DAMAGE?value*RemoteCombat.damageScale(stack()):value;
     }
     public float attackCooldown(float partial) {
         double speed=attributeValue(EntityAttributes.GENERIC_ATTACK_SPEED);

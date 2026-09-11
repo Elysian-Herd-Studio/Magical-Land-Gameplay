@@ -3,6 +3,7 @@ package top.csituka.magicaland.gameplay.remote;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.concurrent.ConcurrentHashMap;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -11,6 +12,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -25,6 +27,8 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.mob.PathAwareEntity;
+import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.SpawnGroup;
 import net.minecraft.entity.player.PlayerEntity;
@@ -33,7 +37,6 @@ import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.ItemUsageContext;
 import net.minecraft.item.MiningToolItem;
-import net.minecraft.item.SwordItem;
 import net.minecraft.particle.BlockStateParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.registry.Registries;
@@ -48,9 +51,12 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameRules;
 import net.minecraft.world.RaycastContext;
+import net.minecraft.world.World;
 import static com.mojang.brigadier.arguments.IntegerArgumentType.*;
 import static net.minecraft.server.command.CommandManager.*;
 
@@ -63,14 +69,45 @@ public final class RemoteToolServer {
             .<RemoteToolEntity>create(RemoteToolEntity::new,SpawnGroup.MISC).setDimensions(.3f,.3f)
             .maxTrackingRange(8).trackingTickInterval(1).disableSaving().disableSummon().build("magicaland_gameplay:remote_tool"));
     private static final Map<UUID,RemoteSession> ACTIVE=new HashMap<>();
+    private static final Map<UUID,ReturnFlight> RETURNS=new HashMap<>();
+    private static final Map<UUID,Delivery> PENDING=new HashMap<>();
+    private record Delivery(RemoteCargoInventory cargo,int sourceSlot,int sourceCargoSlot) {}
+    private static final class ReturnFlight {
+        final RemoteSession session;
+        final int departAt;
+        int stalled;
+        boolean warned;
+        ReturnFlight(RemoteSession session) {
+            this.session=session; departAt=session.player.getServer().getTicks()+6;
+        }
+    }
     private static final Map<UUID,Long> PACKETS=new ConcurrentHashMap<>(),STOPS=new ConcurrentHashMap<>(),DROPS=new ConcurrentHashMap<>();
     private static final Map<UUID,Integer> STARTS=new HashMap<>();
     private static final Map<UUID,Long> REQUESTS=new HashMap<>();
     private static long nextSession;
+    private static int returnCursor;
     private RemoteToolServer() {}
     public static boolean active(ServerPlayerEntity player) { return ACTIVE.containsKey(player.getUuid()); }
     public static boolean owns(RemoteToolEntity tool) {
-        RemoteSession session=ACTIVE.get(tool.owner()); return session!=null && session.tool==tool;
+        RemoteSession session=ACTIVE.get(tool.owner());
+        ReturnFlight flight=RETURNS.get(tool.owner());
+        return session!=null && session.tool==tool || flight!=null && flight.session.tool==tool;
+    }
+    public static RemoteToolEntity temptingTool(PathAwareEntity mob,Predicate<ItemStack> food) {
+        RemoteToolEntity nearest=null;
+        double distance=100;
+        for (RemoteSession session:ACTIVE.values()) {
+            double next=mob.squaredDistanceTo(session.tool);
+            if (next<distance && isTempting(session.tool,mob,food)) { nearest=session.tool; distance=next; }
+        }
+        return nearest;
+    }
+    public static boolean isTempting(RemoteToolEntity tool,PathAwareEntity mob,Predicate<ItemStack> food) {
+        RemoteSession session=ACTIVE.get(tool.owner());
+        return session!=null && session.tool==tool && session.rules.canInteract() && canReturn(session)
+                && mob.getWorld()==tool.getWorld() && mob.isAlive() && !mob.hasVehicle() && !tool.returning()
+                && mob.squaredDistanceTo(tool)<100 && food.test(session.cargo.selectedStack())
+                && clearRay(tool,mob.getEyePos(),tool.getEyePos());
     }
     public static void register() {
         ServerPlayNetworking.registerGlobalReceiver(CONTROL,(server,player,handler,buf,sender) -> {
@@ -89,14 +126,31 @@ public final class RemoteToolServer {
         });
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             for (RemoteSession session:ACTIVE.values().toArray(RemoteSession[]::new)) tick(session,server.getTicks());
+            ReturnFlight[] returning=RETURNS.values().toArray(ReturnFlight[]::new);
+            int navigationBudget=256;
+            for (int i=0;i<returning.length;i++) {
+                ReturnFlight flight=returning[Math.floorMod(returnCursor+i,returning.length)];
+                navigationBudget-=returnTick(flight,server.getTicks(),Math.max(0,navigationBudget));
+            }
+            if (returning.length>0) returnCursor=(returnCursor+1)%returning.length;
+            if (server.getTicks()%20==0) for (UUID owner:PENDING.keySet().toArray(UUID[]::new)) {
+                var player=server.getPlayerManager().getPlayer(owner);
+                if (player!=null && player.isAlive()) deliver(player);
+            }
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler,server) -> {
-            stop(handler.player); UUID owner=handler.player.getUuid();
+            abort(handler.player,RemoteProtocol.INVALID); UUID owner=handler.player.getUuid();
             PACKETS.remove(owner); STOPS.remove(owner); DROPS.remove(owner); STARTS.remove(owner); REQUESTS.remove(owner);
+        });
+        ServerPlayConnectionEvents.JOIN.register((handler,sender,server) -> {
+            var player=handler.player;
+            var cargo=RemoteCargoState.get(server).inventory(player.getUuid());
+            if (!cargo.isEmpty() && !active(player) && !RETURNS.containsKey(player.getUuid()))
+                PENDING.putIfAbsent(player.getUuid(),new Delivery(cargo,-1,-1));
         });
         ServerLivingEntityEvents.AFTER_DEATH.register((entity,source) -> {
             if (!(entity instanceof ServerPlayerEntity player)) return;
-            stop(player,RemoteProtocol.INVALID);
+            abort(player,RemoteProtocol.INVALID);
             RemoteCargoInventory cargo=RemoteCargoState.get(player.getServer()).inventory(player.getUuid());
             if (!player.getWorld().getGameRules().getBoolean(GameRules.KEEP_INVENTORY)) {
                 for (ItemStack stack:cargo.takeAll()) if (!EnchantmentHelper.hasVanishingCurse(stack)
@@ -104,7 +158,9 @@ public final class RemoteToolServer {
             }
         });
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
-            for (RemoteSession session:ACTIVE.values().toArray(RemoteSession[]::new)) stop(session.player);
+            for (RemoteSession session:ACTIVE.values().toArray(RemoteSession[]::new)) abort(session.player,RemoteProtocol.INVALID);
+            for (ReturnFlight flight:RETURNS.values().toArray(ReturnFlight[]::new)) abort(flight.session.player,RemoteProtocol.INVALID);
+            ACTIVE.clear(); RETURNS.clear(); PENDING.clear();
             PACKETS.clear(); STOPS.clear(); DROPS.clear(); STARTS.clear(); REQUESTS.clear();
         });
         CommandRegistrationCallback.EVENT.register((dispatcher,registry,environment) -> {
@@ -114,7 +170,7 @@ public final class RemoteToolServer {
                         var players=EntityArgumentType.getPlayers(context,"players");
                         for (var player:players) {
                             if (grant) player.addCommandTag(GRANT);
-                            else { player.removeScoreboardTag(GRANT); stop(player,RemoteProtocol.INVALID); }
+                            else { player.removeScoreboardTag(GRANT); abort(player,RemoteProtocol.INVALID); }
                         }
                         context.getSource().sendFeedback(() -> Text.literal(grant?"已授予远控测试能力":"已撤销远控测试能力"),true);
                         return players.size();
@@ -123,7 +179,7 @@ public final class RemoteToolServer {
                     .then(argument("count",integer(1,9)).executes(context -> {
                         int count=getInteger(context,"count"),changed=0;
                         for (var player:EntityArgumentType.getPlayers(context,"players")) {
-                            stop(player);
+                            abort(player,RemoteProtocol.INVALID); deliver(player);
                             var inventory=RemoteCargoState.get(player.getServer()).inventory(player.getUuid());
                             if (inventory.unlock(count)) changed++;
                         }
@@ -164,8 +220,11 @@ public final class RemoteToolServer {
     }
     private static void start(ServerPlayerEntity player,long request) {
         if (!ServerPlayNetworking.canSend(player,STATE)) return;
+        if (RETURNS.containsKey(player.getUuid()) || PENDING.containsKey(player.getUuid())) {
+            reject(player,request,"return_flying"); return;
+        }
         if (active(player) || top.csituka.magicaland.gameplay.levitation.UnicornLevitationServer.active(player)
-                || ACTIVE.size()>=64) { reject(player,request,"busy"); return; }
+                || ACTIVE.size()+RETURNS.size()>=64) { reject(player,request,"busy"); return; }
         int now=player.getServer().getTicks(); Integer previous=STARTS.put(player.getUuid(),now);
         if (previous!=null && now-previous<10) { reject(player,request,"busy"); return; }
         if (!top.csituka.magicaland.gameplay.race.RaceServer.isUnicorn(player)) {
@@ -193,6 +252,7 @@ public final class RemoteToolServer {
         if (!s.sourceItem.isEmpty() && cargo.loadFrom(player.getInventory(),s.sourceSlot)==0) {
             stop(player,RemoteProtocol.INVALID); return;
         }
+        if (!s.sourceItem.isEmpty()) s.sourceCargoSlot=cargo.selectedSlot();
         s.bodyStack=player.getInventory().main.get(s.sourceSlot).copy();
         tool.inventoryView(cargo); player.playerScreenHandler.sendContentUpdates(); sync(s,RemoteProtocol.NORMAL);
     }
@@ -203,8 +263,20 @@ public final class RemoteToolServer {
                 && player.currentScreenHandler==player.playerScreenHandler;
     }
     private static boolean clearRay(Entity source,Vec3d from,Vec3d to) {
-        return source.getWorld().raycast(new RaycastContext(from,to,RaycastContext.ShapeType.COLLIDER,
+        return loaded(source.getWorld(),new Box(from,to)) && source.getWorld().raycast(new RaycastContext(from,to,RaycastContext.ShapeType.COLLIDER,
                 RaycastContext.FluidHandling.NONE,source)).getType()==HitResult.Type.MISS;
+    }
+    private static boolean loaded(World world,Box area) {
+        return world.isRegionLoaded(BlockPos.ofFloored(area.minX-1,area.minY,area.minZ-1),
+                BlockPos.ofFloored(area.maxX+1,area.maxY,area.maxZ+1));
+    }
+    private static boolean ownerCanTrack(ServerPlayerEntity player,Vec3d position) {
+        double tracking=Math.min(player.getServer().adjustTrackingDistance(TYPE.getMaxTrackDistance()*16),
+                Math.max(2,Math.min(32,player.getServer().getPlayerManager().getViewDistance()))*16);
+        Vec3d offset=position.subtract(player.getPos());
+        return offset.x*offset.x+offset.z*offset.z<=tracking*tracking
+                && player.getServerWorld().getChunkManager().threadedAnvilChunkStorage
+                .getPlayersWatchingChunk(new ChunkPos(BlockPos.ofFloored(position))).contains(player);
     }
     private static void tick(RemoteSession s,int now) {
         var p=s.player; var tool=s.tool;
@@ -215,15 +287,22 @@ public final class RemoteToolServer {
             stop(p,RemoteProtocol.INVALID); return;
         }
         if (now-s.inputTick>40) { stop(p,RemoteProtocol.TIMEOUT); return; }
+        if (!ownerCanTrack(p,tool.getPos()) || !loaded(p.getWorld(),tool.getBoundingBox())) {
+            stop(p,RemoteProtocol.INVALID); return;
+        }
         if (now-s.inputTick>5) { s.keys=0; s.pressedKeys=0; }
         double[] input=RemoteToolMath.movement(s.yaw,s.pitch,s.keys);
         Vec3d intended=new Vec3d(input[0],input[1],input[2]);
         s.motion=s.motion.lerp(intended,.4);
         Vec3d before=tool.getPos(),next=before.add(s.motion);
         if (tool.getEyePos().add(s.motion).squaredDistanceTo(p.getEyePos())<=RemoteToolMath.RANGE*RemoteToolMath.RANGE
-                && p.getWorld().isChunkLoaded(BlockPos.ofFloored(next)) && p.getWorld().getWorldBorder().contains(tool.getBoundingBox().offset(s.motion))
+                && p.getWorld().isChunkLoaded(BlockPos.ofFloored(next)) && ownerCanTrack(p,next)
+                && loaded(p.getWorld(),tool.getBoundingBox().stretch(s.motion))
+                && p.getWorld().getWorldBorder().contains(tool.getBoundingBox().offset(s.motion))
                 && next.y>p.getWorld().getBottomY()+1 && next.y<p.getWorld().getTopY()-1) tool.move(MovementType.SELF,s.motion);
         Vec3d actual=tool.getPos().subtract(before);
+        if (actual.lengthSquared()>1e-10)
+            s.navigation.record(new RemoteReturnNavigator.Point(tool.getX(),tool.getY(),tool.getZ()));
         tool.setYaw(s.yaw); tool.setPitch(s.pitch);
         float coverage=RemoteVisibility.occlusion(p.getWorld(),p,p.getEyePos(),tool.getPos().add(0,.15,0));
         tool.setOcclusion(coverage);
@@ -233,12 +312,13 @@ public final class RemoteToolServer {
             p.sendMessage(Text.translatable("text.magicaland_gameplay.remote.lost"),true); stop(p,RemoteProtocol.LOST); return;
         }
         try (var context=RemoteActionContext.open(s)) {
-            if (coverage<1) {
+            if (s.rules.canInteract()) {
                 drop(s);
                 interact(s,now);
             } else clearMining(s);
             tool.setAttackCooldown(context.attackCooldown(0));
         } finally { s.pendingDrop=null; s.cargo.markDirty(); }
+        if (ACTIVE.get(p.getUuid())!=s) return;
         s.previousKeys=s.keys; s.pressedKeys=0;
         tool.inventoryView(s.cargo);
         Vec3d target=tool.getEyePos().subtract(p.getEyePos());
@@ -251,12 +331,101 @@ public final class RemoteToolServer {
         RemoteSession s=ACTIVE.get(player.getUuid());
         if (s==null || !s.rules.close()) return;
         ACTIVE.remove(player.getUuid()); clearMining(s);
-        if (player.isAlive()) {
-            s.cargo.returnTo(player.getInventory(),player.getInventory().main.size(),s.sourceSlot);
-            if (!s.cargo.isEmpty()) player.sendMessage(Text.translatable("text.magicaland_gameplay.remote.cargo_retained"),false);
-            player.playerScreenHandler.sendContentUpdates();
+        s.keys=s.previousKeys=s.pressedKeys=0; s.pendingDrop=null;
+        if (s.cargo.isEmpty()) s.tool.discard();
+        else if (canReturn(s)) {
+            s.motion=s.motion.multiply(.25);
+            s.tool.beginReturn(); s.tool.inventoryView(s.cargo);
+            RETURNS.put(player.getUuid(),new ReturnFlight(s));
+        } else {
+            s.tool.discard(); retain(s);
         }
-        s.tool.discard(); sync(s,reason);
+        sync(s,reason);
+    }
+
+    private static boolean canReturn(RemoteSession s) {
+        var p=s.player;
+        return p.isAlive() && p.getServer().getPlayerManager().getPlayer(p.getUuid())==p
+                && p.getWorld()==s.tool.getWorld() && !s.tool.isRemoved()
+                && top.csituka.magicaland.gameplay.race.RaceServer.isUnicorn(p) && p.getCommandTags().contains(GRANT);
+    }
+    private static void retain(RemoteSession s) {
+        if (!s.cargo.isEmpty()) PENDING.put(s.player.getUuid(),new Delivery(s.cargo,s.sourceSlot,s.sourceCargoSlot));
+        s.cargo.markDirty();
+    }
+    private static void abort(ServerPlayerEntity player,int reason) {
+        RemoteSession s=ACTIVE.remove(player.getUuid());
+        ReturnFlight flight=RETURNS.remove(player.getUuid());
+        if (s!=null) {
+            s.rules.close(); clearMining(s); s.tool.discard(); retain(s); sync(s,reason);
+        }
+        if (flight!=null) { flight.session.tool.discard(); retain(flight.session); }
+    }
+    private static void deliver(ServerPlayerEntity player) {
+        Delivery delivery=PENDING.remove(player.getUuid());
+        if (delivery==null) return;
+        if (!player.isAlive()) { PENDING.put(player.getUuid(),delivery); return; }
+        try {
+            delivery.cargo.returnTo(player.getInventory(),player.getInventory().main.size(),delivery.sourceSlot,delivery.sourceCargoSlot);
+            delivery.cargo.dropRemainder(stack -> {
+                ItemEntity item=new ItemEntity(player.getWorld(),player.getX(),player.getY()+.1,player.getZ(),stack);
+                item.setVelocity(0,.08,0); item.setPickupDelay(10); item.setThrower(player.getUuid());
+                return player.getServerWorld().spawnEntity(item);
+            });
+            player.playerScreenHandler.sendContentUpdates();
+        } finally {
+            delivery.cargo.markDirty();
+            if (!delivery.cargo.isEmpty()) PENDING.put(player.getUuid(),delivery);
+        }
+    }
+    private static int returnTick(ReturnFlight flight,int now,int navigationBudget) {
+        RemoteSession s=flight.session;
+        var p=s.player; var tool=s.tool;
+        if (RETURNS.get(p.getUuid())!=flight) return 0;
+        if (s.cargo.isEmpty()) { RETURNS.remove(p.getUuid()); tool.discard(); return 0; }
+        if (!canReturn(s) || !loaded(tool.getWorld(),tool.getBoundingBox())
+                || tool.getPos().squaredDistanceTo(p.getPos())>RemoteToolMath.RANGE*RemoteToolMath.RANGE*4) {
+            abort(p,RemoteProtocol.INVALID); return 0;
+        }
+        if (now<flight.departAt) { tool.setVelocity(Vec3d.ZERO); return 0; }
+        Vec3d home=p.getEyePos().add(0,-.2,0);
+        var from=new RemoteReturnNavigator.Point(tool.getX(),tool.getY(),tool.getZ());
+        var goal=new RemoteReturnNavigator.Point(home.x,home.y,home.z);
+        var step=s.navigation.next(from,goal,Math.min(128,navigationBudget));
+        if (step.status()==RemoteReturnNavigator.Status.ARRIVED) {
+            if (tool.getPos().squaredDistanceTo(home)<=.7*.7 && RemoteFlightCollision.clear(tool,from,goal)
+                    && RETURNS.remove(p.getUuid(),flight)) {
+                tool.discard(); retain(s); deliver(p);
+            }
+            return step.expandedNodes();
+        }
+        Vec3d before=tool.getPos();
+        if (step.status()==RemoteReturnNavigator.Status.MOVING) {
+            var point=step.waypoint();
+            Vec3d toward=new Vec3d(point.x()-from.x(),point.y()-from.y(),point.z()-from.z());
+            double[] motion=RemoteReturnMotion.approach(s.motion.x,s.motion.y,s.motion.z,toward.x,toward.y,toward.z);
+            Vec3d next=before.add(motion[0],motion[1],motion[2]);
+            if (!RemoteFlightCollision.clear(tool,from,new RemoteReturnNavigator.Point(next.x,next.y,next.z))) {
+                double distance=toward.length();
+                Vec3d safe=distance<1e-6?Vec3d.ZERO:toward.multiply(Math.min(.12,distance)/distance);
+                next=before.add(safe);
+            }
+            if (RemoteFlightCollision.clear(tool,from,new RemoteReturnNavigator.Point(next.x,next.y,next.z)))
+                tool.move(MovementType.SELF,next.subtract(before));
+        }
+        s.motion=tool.getPos().subtract(before);
+        tool.setVelocity(s.motion);
+        if (s.motion.lengthSquared()>1e-6) {
+            float yaw=(float)Math.toDegrees(Math.atan2(-s.motion.x,s.motion.z));
+            float pitch=(float)-Math.toDegrees(Math.atan2(s.motion.y,s.motion.horizontalLength()));
+            tool.setYaw(RemoteToolMath.approach(tool.getYaw(),yaw,12));
+            tool.setPitch(RemoteToolMath.approach(tool.getPitch(),pitch,8));
+            flight.stalled=0; flight.warned=false;
+        } else if (++flight.stalled>=60 && !flight.warned) {
+            p.sendMessage(Text.translatable("text.magicaland_gameplay.remote.return_blocked"),true); flight.warned=true;
+        }
+        if (now%5==0) tool.inventoryView(s.cargo);
+        return step.expandedNodes();
     }
     private static void clearMining(RemoteSession s) {
         if (s.mining!=null) s.tool.getWorld().setBlockBreakingInfo(s.tool.getId(),s.mining,-1);
@@ -291,10 +460,11 @@ public final class RemoteToolServer {
         var p=s.player; var world=p.getServerWorld(); var tool=s.tool;
         ItemStack stack=s.cargo.selectedStack();
         Vec3d from=tool.getEyePos(),to=from.add(tool.getRotationVec(1).multiply(3));
+        if (!loaded(world,new Box(from,to))) { clearMining(s); return; }
         BlockHitResult hit=world.raycast(new RaycastContext(from,to,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,tool));
         boolean attack=(s.keys&64)!=0 || (s.pressedKeys&64)!=0;
         boolean usePressed=(((s.keys&~s.previousKeys)|s.pressedKeys)&128)!=0;
-        boolean melee=stack.getItem() instanceof MiningToolItem || stack.getItem() instanceof SwordItem;
+        boolean melee=RemoteCombat.canAttack(stack);
         double reach=hit.getType()==HitResult.Type.MISS?9:from.squaredDistanceTo(hit.getPos());
         var victim=ProjectileUtil.raycast(tool,from,to,tool.getBoundingBox().stretch(to.subtract(from)).expand(1),
                 entity -> entity!=p && entity instanceof LivingEntity && entity.isAlive() && !entity.isSpectator() && entity.canHit(),reach);
@@ -302,7 +472,8 @@ public final class RemoteToolServer {
             clearMining(s); var target=victim.getEntity();
             if (p.getAttackCooldownProgress(0)>=1) {
                 tool.startAction(RemoteAction.SWING); s.lastSwingTick=now;
-                if (canAttack(p,tool,target) && AttackEntityCallback.EVENT.invoker().interact(p,world,Hand.MAIN_HAND,target,victim)==ActionResult.PASS) {
+                if (canAttack(p,tool,target) && AttackEntityCallback.EVENT.invoker().interact(p,world,Hand.MAIN_HAND,target,victim)==ActionResult.PASS
+                        && canStrike(s,target)) {
                     RemoteActionContext.current().resetHit(); p.attack(target);
                     p.resetLastAttackedTicks();
                     if (tool.action()!=RemoteAction.TOOL_BREAK && RemoteActionContext.current().hit()) tool.startAction(RemoteAction.HIT);
@@ -312,12 +483,20 @@ public final class RemoteToolServer {
             mine(s,hit,now);
         } else {
             clearMining(s);
-            if (attack && now-s.lastSwingTick>=6) {
+            if (attack && melee && now-s.lastSwingTick>=6) {
                 tool.startAction(RemoteAction.SWING); s.lastSwingTick=now; p.resetLastAttackedTicks();
                 world.playSound(null,tool.getX(),tool.getY(),tool.getZ(),SoundEvents.ENTITY_PLAYER_ATTACK_WEAK,SoundCategory.PLAYERS,.6f,1);
             }
         }
-        if (usePressed && hit.getType()==HitResult.Type.BLOCK && world.canPlayerModifyAt(p,hit.getBlockPos())) {
+        if (s.rules.phase()==RemoteSessionRules.Phase.CLOSED) return;
+        if (usePressed && victim!=null && victim.getEntity() instanceof AnimalEntity animal) {
+            clearMining(s);
+            if (canFeed(s,animal)) {
+                ActionResult result=UseEntityCallback.EVENT.invoker().interact(p,world,Hand.MAIN_HAND,animal,victim);
+                if (result==ActionResult.PASS && canFeed(s,animal)) result=p.interact(animal,Hand.MAIN_HAND);
+                if (s.rules.canInteract()) tool.startAction(result.isAccepted()?RemoteAction.USE:RemoteAction.SWING);
+            }
+        } else if (usePressed && victim==null && hit.getType()==HitResult.Type.BLOCK && world.canPlayerModifyAt(p,hit.getBlockPos())) {
             clearMining(s);
             var state=world.getBlockState(hit.getBlockPos()); var block=state.getBlock();
             boolean mechanism=block instanceof DoorBlock || block instanceof TrapdoorBlock || block instanceof FenceGateBlock
@@ -334,11 +513,33 @@ public final class RemoteToolServer {
                 if (tool.action()!=RemoteAction.TOOL_BREAK) tool.startAction(result.isAccepted()?RemoteAction.USE:RemoteAction.SWING);
             }
         }
+        if (s.rules.phase()==RemoteSessionRules.Phase.CLOSED) return;
         for (ItemEntity item:world.getEntitiesByClass(ItemEntity.class,tool.getBoundingBox().expand(.45),
                 item -> RemotePickup.canPickup(item,p.getUuid()))) {
             if (!RemotePickup.clearPath(world,tool,from,item) || !RemotePickup.collect(s.cargo,item,p.getUuid())) continue;
             world.playSound(null,tool.getX(),tool.getY(),tool.getZ(),SoundEvents.ENTITY_ITEM_PICKUP,SoundCategory.PLAYERS,.2f,1);
         }
+    }
+    private static boolean canStrike(RemoteSession s,Entity target) {
+        var p=s.player; var tool=s.tool;
+        if (ACTIVE.get(p.getUuid())!=s || !s.rules.canInteract() || !canReturn(s)
+                || !RemoteCombat.canAttack(s.cargo.selectedStack()) || p.getAttackCooldownProgress(0)<1
+                || !canAttack(p,tool,target)) return false;
+        Vec3d from=tool.getEyePos(),to=from.add(tool.getRotationVec(1).multiply(3));
+        var box=target.getBoundingBox().expand(target.getTargetingMargin());
+        return box.contains(from) || box.raycast(from,to).isPresent();
+    }
+    private static boolean canFeed(RemoteSession s,AnimalEntity animal) {
+        var p=s.player; var tool=s.tool; var world=p.getServerWorld();
+        var food=s.cargo.selectedStack();
+        if (ACTIVE.get(p.getUuid())!=s || !s.rules.canInteract() || !canReturn(s)
+                || animal.getWorld()!=world || !animal.isAlive() || animal.hasPassengers()
+                || p.shouldCancelInteraction() || food.isEmpty() || !animal.isBreedingItem(food)
+                || !world.canPlayerModifyAt(p,animal.getBlockPos())) return false;
+        Vec3d from=tool.getEyePos();
+        var box=animal.getBoundingBox().expand(animal.getTargetingMargin());
+        Vec3d point=box.contains(from)?from:box.raycast(from,from.add(tool.getRotationVec(1).multiply(3))).orElse(null);
+        return point!=null && clearRay(tool,from,point);
     }
     private static void mine(RemoteSession s,BlockHitResult hit,int now) {
         var p=s.player; var world=p.getServerWorld(); var tool=s.tool;

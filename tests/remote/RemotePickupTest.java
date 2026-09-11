@@ -76,15 +76,15 @@ public final class RemotePickupTest {
         check(!RemotePickup.canPickup(item(ItemStack.EMPTY),PLAYER),"empty entity rejected");
     }
     private static void transfer() {
-        var cargo=new RemoteCargoInventory();
-        var item=item(new ItemStack(Items.STONE,13));
+        var cargo=new RemoteCargoInventory(); cargo.unlock(1);
+        var item=item(new ItemStack(Items.STONE,69));
         check(RemotePickup.collect(cargo,item,PLAYER),"partial transfer accepted");
-        check(cargo.getStack(0).getCount()==8 && item.getStack().getCount()==5 && !item.isRemoved(),"eight-item capacity leaves remainder in world");
+        check(cargo.getStack(0).getCount()==64 && item.getStack().getCount()==5 && !item.isRemoved(),"vanilla stack limit leaves remainder in world");
         check(!RemotePickup.collect(cargo,item,PLAYER),"full slot does not consume item");
         check(item.getStack().getCount()==5,"full-slot remainder unchanged");
         cargo.removeStack(0,4);
         check(RemotePickup.collect(cargo,item,PLAYER),"free capacity accepts remaining stack");
-        check(cargo.getStack(0).getCount()==8 && item.getStack().getCount()==1,"partial transfer conserves total");
+        check(cargo.getStack(0).getCount()==64 && item.getStack().getCount()==1,"partial transfer conserves total");
         check(cargo.unlock(2),"second slot unlocked");
         check(RemotePickup.collect(cargo,item,PLAYER) && item.isRemoved(),"final transfer removes world entity");
         check(cargo.getStack(1).getCount()==1,"overflow fills only unlocked slot");
@@ -103,7 +103,7 @@ public final class RemotePickupTest {
         check(!RemotePickup.collect(empty,reserved,PLAYER) && empty.isEmpty(),"delay rejection cannot mutate inventory");
     }
     private static void dropAndRecover() {
-        for (boolean whole:new boolean[]{false,true}) for (int count=1;count<=8;count++) {
+        for (boolean whole:new boolean[]{false,true}) for (int count=1;count<=64;count++) {
             var cargo=new RemoteCargoInventory(); cargo.setStack(0,new ItemStack(Items.GOLDEN_CARROT,count));
             DroppedItem[] dropped={null};
             check(cargo.dropFrom(0,whole,stack -> {

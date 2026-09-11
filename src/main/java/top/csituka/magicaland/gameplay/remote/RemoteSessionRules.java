@@ -6,10 +6,14 @@ public final class RemoteSessionRules {
     private Phase phase=Phase.ACTIVE;
     private double visibleX,visibleY,visibleZ,blindX,blindY,blindZ,forwardX,forwardY,forwardZ;
     private boolean anchored;
+    private final boolean spiritualEcho;
     public static final double RECALL_DEPTH=.75;
 
+    public RemoteSessionRules() { this(RemoteCapabilities.SPIRITUAL_ECHO); }
+    public RemoteSessionRules(boolean spiritualEcho) { this.spiritualEcho=spiritualEcho; }
     public int sequence() { return sequence; }
     public Phase phase() { return phase; }
+    public boolean canInteract() { return phase!=Phase.CLOSED && (spiritualEcho || phase!=Phase.BLIND); }
     public boolean acceptInput(int next) {
         if (phase==Phase.CLOSED || next<=sequence) return false;
         sequence=next; return true;
@@ -27,6 +31,7 @@ public final class RemoteSessionRules {
             phase=occlusion>0?Phase.FADING:Phase.ACTIVE;
             return false;
         }
+        if (spiritualEcho) { phase=Phase.BLIND; return false; }
         if (phase!=Phase.BLIND) {
             double ax=anchored?x-visibleX:dx,ay=anchored?y-visibleY:dy,az=anchored?z-visibleZ:dz;
             double length=Math.sqrt(ax*ax+ay*ay+az*az);

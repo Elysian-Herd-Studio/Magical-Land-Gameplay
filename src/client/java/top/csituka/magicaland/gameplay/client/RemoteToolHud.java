@@ -8,6 +8,8 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
 import top.csituka.magicaland.api.client.Appearances;
+import top.csituka.magicaland.gameplay.client.echo.SpiritualEchoRenderer;
+import top.csituka.magicaland.gameplay.remote.RemoteCapabilities;
 
 public final class RemoteToolHud {
     private static final Identifier WIDGETS = new Identifier("minecraft","textures/gui/widgets.png");
@@ -15,8 +17,8 @@ public final class RemoteToolHud {
     private static double lastFrame;
     private RemoteToolHud() {}
 
-    public static void init() { RemoteAim.init(); }
-    public static void reset() { visualOcclusion=0; lastFrame=0; RemoteAim.clear(); }
+    public static void init() { RemoteAim.init(); SpiritualEchoRenderer.init(); }
+    public static void reset() { visualOcclusion=0; lastFrame=0; RemoteAim.clear(); SpiritualEchoRenderer.reset(); }
 
     public static void renderWorldOverlay(DrawContext context,float delta) {
         var client=MinecraftClient.getInstance();
@@ -25,7 +27,8 @@ public final class RemoteToolHud {
         double elapsed=lastFrame==0 ? 0 : now-lastFrame;
         lastFrame=now;
         if (RemoteToolClient.returning() && RemoteToolClient.camera()==null) visualOcclusion=0;
-        else visualOcclusion=RemoteVisualMath.approachOcclusion(visualOcclusion,RemoteToolClient.occlusion(),elapsed);
+        else if (!RemoteToolClient.returning())
+            visualOcclusion=RemoteVisualMath.approachOcclusion(visualOcclusion,RemoteToolClient.occlusion(),elapsed);
         float recall=RemoteToolClient.returnOpacity();
         boolean first=client.options.getPerspective().isFirstPerson() && RemoteToolClient.camera()!=null;
         int color=Appearances.magicColor(client.player.getUuid());
@@ -43,6 +46,7 @@ public final class RemoteToolHud {
             vertex(vertices,matrix,x1,y0,width,height,color,first,recall);
         }
         context.draw();
+        if (recall==0) SpiritualEchoRenderer.render(visualOcclusion);
         if (first && RemoteToolClient.stack(RemoteToolClient.selectedSlot()).isEmpty() && visualOcclusion<.95f && recall==0)
             renderEmptyFlow(context,color,now,delta);
     }
@@ -98,7 +102,9 @@ public final class RemoteToolHud {
         var selected=RemoteToolClient.stack(RemoteToolClient.selectedSlot());
         if (!selected.isEmpty()) context.drawCenteredTextWithShadow(client.textRenderer,selected.getName(),width/2,y-13,0xffffff);
         String hint=RemoteToolClient.returning() ? "text.magicaland_gameplay.remote.returning"
-                : visualOcclusion>=.999f ? "text.magicaland_gameplay.remote.blind" : "text.magicaland_gameplay.remote.controls";
+                : visualOcclusion>=.999f ? (SpiritualEchoRenderer.unavailable()
+                    ? "text.magicaland_gameplay.remote.echo_unavailable" : "text.magicaland_gameplay.remote.blind")
+                : "text.magicaland_gameplay.remote.controls";
         Text hintText=hint.endsWith(".controls")
                 ? Text.translatable(hint,RemoteToolClient.dropKey(),RemoteToolClient.returnKey())
                 : Text.translatable(hint,RemoteToolClient.returnKey());
@@ -110,12 +116,12 @@ public final class RemoteToolHud {
             hintY+=10;
         }
         var camera=RemoteToolClient.camera();
-        if (camera!=null && camera.getPos().distanceTo(client.player.getEyePos())>13)
-            context.drawCenteredTextWithShadow(client.textRenderer,Text.translatable("text.magicaland_gameplay.remote.edge"),width/2,12,0xffcc66);
-        if (RemoteToolClient.controlling() && RemoteToolClient.occlusion()<.999f && visualOcclusion<.999f) {
+        if (camera!=null && camera.getPos().distanceTo(client.player.getEyePos())>RemoteCapabilities.MAX_RANGE*.85)
+            context.drawCenteredTextWithShadow(client.textRenderer,Text.translatable("text.magicaland_gameplay.remote.edge",(int)RemoteCapabilities.MAX_RANGE),width/2,12,0xffcc66);
+        if (RemoteToolClient.controlling()) {
             var aim=client.options.getPerspective().isFirstPerson() ? new RemoteAimMath.Point(.5f,.5f) : RemoteAim.point();
             if (aim==null) return;
-            float visibility=1-RemoteVisualMath.vignette(aim.x()*2-1,aim.y()*2-1,visualOcclusion);
+            float visibility=RemoteCapabilities.SPIRITUAL_ECHO ? 1 : 1-RemoteVisualMath.vignette(aim.x()*2-1,aim.y()*2-1,visualOcclusion);
             if (visibility<.05f) return;
             int cx=Math.round(aim.x()*width), cy=Math.round(aim.y()*height);
             int reticle=(Math.round(221*visibility)<<24)|0xffffff;
