@@ -28,3 +28,6 @@ bin
 .vscode
 .workbuddy
 .claude
+
+# 个人测试仅在本地维护。
+/tests/

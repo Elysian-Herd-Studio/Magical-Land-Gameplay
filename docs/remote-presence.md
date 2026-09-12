@@ -103,7 +103,7 @@
 
 最初重构（0.2.0）的检查范围和证据见[重构报告](reports/2026-09-10-remote-rebuild.md)；本轮 0.2.1 的修复与检查见[验收反馈修复](reports/2026-09-10-remote-followup.md)。报告分别记录独立检查、构建和用户验收。
 
-回归入口位于 `tests/remote`：
+以下独立回归按本地 `tests/remote` 布局维护，不随仓库发布：
 
 - `RemoteToolMathTest`：方向、归一化速度及本体头眼跟随。
 - `RemoteSessionRulesTest`：完整功能下全遮挡继续交互且不深入强退、可显式启用的旧遮挡规则、长时间停留、横移、后退、惯性、输入有序性及幂等关闭。
@@ -119,7 +119,7 @@
 
 携物回航另有 `RemoteReturnNavigatorTest`、`RemoteReturnMotionTest` 和 `RemoteReturnIntegrationTest`，检查来路、绕障、移动目标、碰撞及服务端交付边界。`tests/remote-client/run-tests.ps1` 检查回航持物、实体缓存生命周期、状态时序和既有朝向数学。具体记录见[携物回航报告](reports/2026-09-11-remote-return.md)。
 
-最新试玩修复的范围见[反馈记录](reports/2026-09-11-remote-playtest-fixes.md)。[动物吸引测试](../tests/remote-temptation/README.md)使用简化世界对象运行实际关联代码，检查普通玩家优先、食品条件和失效清理；回声的持续时间、换轮衔接与渲染状态由[回声测试](../tests/echo/README.md)覆盖。
+最新试玩修复的范围见[反馈记录](reports/2026-09-11-remote-playtest-fixes.md)。本地动物吸引测试使用简化世界对象运行实际关联代码，检查普通玩家优先、食品条件和失效清理；回声的持续时间、换轮衔接与渲染状态由本地回声测试覆盖。
 
 `tests/config/run-tests.ps1` 使用真实 Gson、Mod Menu 入口和实际设置页处理器，覆盖独立保存、旧选择提前迁移、外观随后重存、专用服务端不生成客户端设置、保存失败及重试。此前版本记录为 380 项检查通过，并完成全源码 Java 17 类型检查、296 项架构与 110 项远控边界检查。玩法编译仅依赖外观公共 API。
 
