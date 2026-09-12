@@ -217,7 +217,7 @@ public final class UnicornLevitationClient {
         if (movedAge == player.age) return true;
         movedAge = player.age;
         var next = UnicornLevitationMath.step(velocity, input.yaw(), input.forwardAxis(player.isUsingItem()),
-                input.sideAxis(player.isUsingItem()), mode, player.getY(), support == null ? Double.NaN : support.y(), input.sneak());
+                input.sideAxis(player.isUsingItem()), mode, player.getY(), support == null ? Double.NaN : support.y());
         player.setVelocity(next.x(), next.y(), next.z());
         player.move(MovementType.SELF, player.getVelocity());
         // Entity.move retains collision resolution; never reset fall distance or grant vanilla flight.

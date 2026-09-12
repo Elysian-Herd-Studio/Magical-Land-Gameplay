@@ -2,6 +2,7 @@ package top.csituka.magicaland.gameplay.levitation;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -78,13 +79,29 @@ public final class UnicornLevitationServer {
         if (verdict == UnicornLevitationBudget.Verdict.ACCEPT) return true;
         if (verdict == UnicornLevitationBudget.Verdict.REJECT) close(player, "movement");
         // requestTeleport 接收绝对角度；ROT 只控制发包时换算为相对角度。
-        player.networkHandler.requestTeleport(player.getX(), player.getY(), player.getZ(), player.getYaw(), player.getPitch(), PositionFlag.ROT);
+        session.correctingMovement = true;
+        try {
+            player.networkHandler.requestTeleport(player.getX(), player.getY(), player.getZ(), player.getYaw(), player.getPitch(), PositionFlag.ROT);
+        } finally { session.correctingMovement = false; }
         if (verdict == UnicornLevitationBudget.Verdict.CORRECT) {
             session.budget.reanchor(player.getX(), player.getY(), player.getZ());
             session.motion = session.budget.expected();
             send(session, true, UnicornLevitationProtocol.MOVEMENT_CORRECTION, true);
         }
         return false;
+    }
+    public static void teleported(ServerPlayerEntity player, Set<PositionFlag> flags) {
+        var session = SESSIONS.get(player.getUuid());
+        if (session == null || session.player != player || !session.rules.open() || session.correctingMovement
+                || !session.dimension.equals(dimension(player))) return;
+        session.position = player.getPos(); session.observedTick = now(player);
+        session.grounded = player.isOnGround(); session.spaceGrounded = false;
+        session.movementGuard.teleported(now(player));
+        if (session.budget != null) {
+            session.budget.teleport(player.getX(), player.getY(), player.getZ(),
+                    flags.contains(PositionFlag.X), flags.contains(PositionFlag.Y), flags.contains(PositionFlag.Z));
+            session.motion = session.budget.expected();
+        } else session.motion = UnicornLevitationMath.Motion.ZERO;
     }
     public static boolean protectsFallDamage(ServerPlayerEntity player) {
         var session = SESSIONS.get(player.getUuid());
@@ -156,7 +173,7 @@ public final class UnicornLevitationServer {
                 float forward = ((session.input.forward() ? 1 : 0) - (session.input.backward() ? 1 : 0)) * scale;
                 float sideways = ((session.input.left() ? 1 : 0) - (session.input.right() ? 1 : 0)) * scale;
                 session.budget.advance(tick, session.input.yaw(), forward, sideways, session.mode,
-                        player.getY(), support == null ? Double.NaN : support.y(), session.input.sneak());
+                        player.getY(), support == null ? Double.NaN : support.y());
             }
             session.health = player.getHealth(); session.absorption = player.getAbsorptionAmount();
             session.grounded = player.isOnGround();
@@ -180,7 +197,6 @@ public final class UnicornLevitationServer {
         if (session == null || session.player != player) return;
         session.rules.close(); session.mode = Mode.OFF; session.budget = null;
         session.spaceGrounded = false;
-        session.closeReason = reason;
         if (session.rules.token() > 0) send(session, false, reason);
     }
     private static void send(Session session, boolean allowed, String reason) {
@@ -213,13 +229,12 @@ public final class UnicornLevitationServer {
         final UnicornLevitationMovementGuard movementGuard = new UnicornLevitationMovementGuard();
         UnicornLevitationProtocol.Control input;
         String dimension;
-        String closeReason = "manual";
         Mode mode = Mode.OFF;
         UnicornLevitationMath.Motion motion;
         Vec3d position;
         UnicornLevitationBudget budget;
         long observedTick;
-        boolean grounded, spaceGrounded;
+        boolean grounded, spaceGrounded, correctingMovement;
         float health, absorption;
         Session(ServerPlayerEntity player, UnicornLevitationRules rules, long tick) {
             this.player = player; this.rules = rules; dimension = dimension(player); position = player.getPos();

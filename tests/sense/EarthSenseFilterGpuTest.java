@@ -7,6 +7,8 @@ import java.util.Arrays;
 import java.util.List;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL;
+import org.lwjgl.opengl.GL40C;
+import org.lwjgl.opengl.ARBDrawBuffersBlend;
 import org.lwjgl.system.Configuration;
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL33C.*;
@@ -17,15 +19,18 @@ public final class EarthSenseFilterGpuTest {
         @Override public void close() { glDeleteFramebuffers(fbo); glDeleteTextures(texture); glDeleteRenderbuffers(depth); }
     }
     public static void main(String[] args) throws Exception {
-        boolean gl32 = args.length < 2 || !args[1].equals("native");
+        String mode = args.length < 2 ? "strict32" : args[1];
+        boolean gl32 = !mode.equals("native");
+        boolean strict32 = mode.equals("strict32");
         if (gl32) {
             Configuration.OPENGL_MAXVERSION.set("3.2");
-            Configuration.OPENGL_EXTENSION_FILTER.set("GL_ARB_sampler_objects");
+            Configuration.OPENGL_EXTENSION_FILTER.set(strict32
+                    ? "GL_ARB_sampler_objects,GL_ARB_draw_buffers_blend" : "GL_ARB_sampler_objects");
         }
         if (!glfwInit()) throw new AssertionError("GLFW init");
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, gl32 ? 3 : 4);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, gl32 ? 2 : 0);
         glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
         long window = glfwCreateWindow(64, 64, "Earth sense offscreen regression", 0, 0);
@@ -34,6 +39,9 @@ public final class EarthSenseFilterGpuTest {
         GL.createCapabilities();
         if (gl32) check(GL.getCapabilities().OpenGL32 && !GL.getCapabilities().OpenGL33
                 && !GL.getCapabilities().GL_ARB_sampler_objects, "strict 3.2 capability table without sampler objects");
+        if (strict32) check(!indexedBlend(), "strict 3.2 uses global blend parameters without draw_buffers_blend");
+        else check(indexedBlend() && GL.getCapabilities().OpenGL40 == !gl32,
+                "expected core/extension indexed blend path is available for " + mode);
         String vertex = Files.readString(Path.of(args[0], "earth_sense.vsh"));
         String fragment = Files.readString(Path.of(args[0], "earth_sense.fsh"));
         String blobVertex = Files.readString(Path.of(args[0], "earth_sense_blob.vsh"));
@@ -61,8 +69,7 @@ public final class EarthSenseFilterGpuTest {
                         glEnable(GL_FRAMEBUFFER_SRGB); glEnable(GL_DITHER);
                         glEnable(GL_CLIP_DISTANCE0); glEnable(GL_COLOR_LOGIC_OP); glLogicOp(GL_XOR);
                         glDepthFunc(GL_GREATER); glDepthMask(true);
-                        glBlendFuncSeparate(GL_ONE, GL_DST_COLOR, GL_ONE_MINUS_DST_ALPHA, GL_SRC_ALPHA);
-                        glColorMask(false, true, false, true);
+                        distinctDrawBufferState();
                         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
                         int[] before = snapshot();
                         boolean drawn = filter.render(scene.fbo, scene.width, scene.height, amount);
@@ -87,6 +94,7 @@ public final class EarthSenseFilterGpuTest {
                     int rgb = EarthSenseVisualMath.kindColor(kind);
                     var blob = new EarthSenseVisualMath.Blob(.5f, .5f, .25f, .35f,
                             ((rgb >> 16) & 255) / 255f, ((rgb >> 8) & 255) / 255f, (rgb & 255) / 255f, .9f, .55f, 1);
+                    distinctDrawBufferState();
                     int[] saved = snapshot();
                     check(filter.render(scene.fbo, scene.width, scene.height, .8f, .35f, List.of(blob)), "world cloud composites after gray blur");
                     check(Arrays.equals(saved, snapshot()), "cloud blend/shader state restored");
@@ -177,9 +185,10 @@ public final class EarthSenseFilterGpuTest {
                 glReadPixels(2, 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, hud);
                 check(hud.get(0) == 0 && (hud.get(1) & 255) == 255 && hud.get(2) == 0, "later HUD is not desaturated");
             }
+            multipleDrawTargets(filter);
             check(glGetError() == GL_NO_ERROR, "final GL error clear");
-            System.out.println("PASS earth sense actual filter/cloud GPU: " + checks + "; requested GL3.2, capabilities 3.3="
-                    + GL.getCapabilities().OpenGL33 + ", sampler=" + samplers() + "; driver=" + glGetString(GL_VERSION));
+            System.out.println("PASS earth sense actual filter/cloud GPU: " + checks + "; mode=" + mode
+                    + ", indexed blend=" + indexedBlend() + ", sampler=" + samplers() + "; driver=" + glGetString(GL_VERSION));
         } finally {
             glDeleteVertexArrays(spareVao); glDeleteTextures(texture); if (sampler != 0) glDeleteSamplers(sampler); glDeleteBuffers(unpack);
             glUseProgram(0); glDeleteProgram(spareProgram);
@@ -216,10 +225,20 @@ public final class EarthSenseFilterGpuTest {
     }
     private static int[] snapshot() {
         var list = new java.util.ArrayList<Integer>();
+        for (int index = 0; index < 2; index++) {
+            ByteBuffer color = ByteBuffer.allocateDirect(4);
+            glGetBooleani_v(GL_COLOR_WRITEMASK, index, color);
+            for (int c = 0; c < 4; c++) list.add((int) color.get(c));
+            list.add(glIsEnabledi(GL_BLEND, index) ? 1 : 0);
+            if (indexedBlend()) for (int parameter : new int[] {GL_BLEND_SRC_RGB, GL_BLEND_DST_RGB,
+                    GL_BLEND_SRC_ALPHA, GL_BLEND_DST_ALPHA, GL_BLEND_EQUATION_RGB, GL_BLEND_EQUATION_ALPHA})
+                list.add(glGetIntegeri(parameter, index));
+        }
         for (int name : new int[] {GL_READ_FRAMEBUFFER_BINDING, GL_DRAW_FRAMEBUFFER_BINDING, GL_CURRENT_PROGRAM,
                 GL_VERTEX_ARRAY_BINDING, GL_ACTIVE_TEXTURE, GL_TEXTURE_BINDING_2D, GL_PIXEL_UNPACK_BUFFER_BINDING,
                 GL_ARRAY_BUFFER_BINDING, GL_DEPTH_FUNC, GL_DEPTH_WRITEMASK, GL_BLEND_SRC_RGB, GL_BLEND_DST_RGB,
-                GL_BLEND_SRC_ALPHA, GL_BLEND_DST_ALPHA, GL_BLEND_EQUATION_RGB, GL_BLEND_EQUATION_ALPHA, GL_READ_BUFFER, GL_DRAW_BUFFER0}) list.add(glGetInteger(name));
+                GL_BLEND_SRC_ALPHA, GL_BLEND_DST_ALPHA, GL_BLEND_EQUATION_RGB, GL_BLEND_EQUATION_ALPHA, GL_READ_BUFFER,
+                GL_DRAW_BUFFER0, GL_DRAW_BUFFER1}) list.add(glGetInteger(name));
         int active = glGetInteger(GL_ACTIVE_TEXTURE); glActiveTexture(GL_TEXTURE0);
         list.add(glGetInteger(GL_TEXTURE_BINDING_2D)); list.add(samplers() ? glGetIntegeri(GL_SAMPLER_BINDING, 0) : 0); glActiveTexture(active);
         for (int name : new int[] {GL_VIEWPORT, GL_SCISSOR_BOX, GL_COLOR_WRITEMASK}) {
@@ -256,6 +275,51 @@ public final class EarthSenseFilterGpuTest {
     }
     private static void check(boolean value, String message) { checks++; if (!value) throw new AssertionError(message); }
     private static boolean samplers() { return GL.getCapabilities().OpenGL33 || GL.getCapabilities().GL_ARB_sampler_objects; }
+    private static boolean indexedBlend() { return GL.getCapabilities().OpenGL40 || GL.getCapabilities().GL_ARB_draw_buffers_blend; }
+    private static void multipleDrawTargets(EarthSenseFilter filter) {
+        normalState();
+        try (Scene scene = scene(16, 16); Scene auxiliary = scene(16, 16)) {
+            glBindFramebuffer(GL_FRAMEBUFFER, scene.fbo);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, auxiliary.texture, 0);
+            glDrawBuffers(new int[] {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1});
+            glClearBufferfv(GL_COLOR, 1, new float[] {.8f, .1f, .6f, .7f});
+            check(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "MRT framebuffer complete");
+            byte[] primary = read(scene), extra = read(auxiliary);
+            distinctDrawBufferState();
+            for (var blobs : List.of(List.<EarthSenseVisualMath.Blob>of(), List.of(
+                    new EarthSenseVisualMath.Blob(.5f, .5f, .25f, .35f, 1, 0, 0, .9f, .55f, 1)))) {
+                int[] before = snapshot();
+                check(!filter.render(scene.fbo, scene.width, scene.height, .8f, .35f, blobs),
+                        "multiple active draw buffers are skipped before grayscale/cloud output");
+                check(Arrays.equals(before, snapshot()), "MRT skip preserves draw routing and indexed states");
+                check(Arrays.equals(primary, read(scene)), "MRT primary attachment unchanged");
+                check(Arrays.equals(extra, read(auxiliary)), "MRT auxiliary attachment unchanged");
+                depth(scene);
+            }
+        }
+        normalState();
+    }
+    private static void distinctDrawBufferState() {
+        glColorMaski(0, false, true, false, true);
+        glColorMaski(1, true, false, true, false);
+        glEnablei(GL_BLEND, 0); glDisablei(GL_BLEND, 1);
+        if (indexedBlend()) {
+            blend(0, GL_ONE, GL_DST_COLOR, GL_ONE_MINUS_DST_ALPHA, GL_SRC_ALPHA, GL_FUNC_SUBTRACT, GL_FUNC_REVERSE_SUBTRACT);
+            blend(1, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE, GL_MAX, GL_MIN);
+        } else {
+            glBlendFuncSeparate(GL_ONE, GL_DST_COLOR, GL_ONE_MINUS_DST_ALPHA, GL_SRC_ALPHA);
+            glBlendEquationSeparate(GL_FUNC_SUBTRACT, GL_FUNC_REVERSE_SUBTRACT);
+        }
+    }
+    private static void blend(int index, int srcRgb, int dstRgb, int srcAlpha, int dstAlpha, int rgb, int alpha) {
+        if (GL.getCapabilities().OpenGL40) {
+            GL40C.glBlendFuncSeparatei(index, srcRgb, dstRgb, srcAlpha, dstAlpha);
+            GL40C.glBlendEquationSeparatei(index, rgb, alpha);
+        } else {
+            ARBDrawBuffersBlend.glBlendFuncSeparateiARB(index, srcRgb, dstRgb, srcAlpha, dstAlpha);
+            ARBDrawBuffersBlend.glBlendEquationSeparateiARB(index, rgb, alpha);
+        }
+    }
     private static byte[] read(Scene scene) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, scene.fbo);
         ByteBuffer result = ByteBuffer.allocateDirect(scene.width * scene.height * 4);

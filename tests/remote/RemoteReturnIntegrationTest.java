@@ -30,7 +30,8 @@ public final class RemoteReturnIntegrationTest {
         check(delivery.indexOf("returnTo(")<delivery.indexOf("dropRemainder("),"inventory accepts what it can before feet drops");
         check(delivery.contains("player.getY()+.1") && delivery.contains("setPickupDelay(10)") && delivery.contains("spawnEntity(item)"),"overflow drops at current feet with a pickup delay");
         check(server.contains("ServerPlayConnectionEvents.JOIN") && server.contains("ServerPlayConnectionEvents.DISCONNECT")
-                && server.contains("SERVER_STOPPING") && server.contains("cargo.takeAll()") && server.contains("hasVanishingCurse"),"recovery and ordinary death rules remain wired");
+                && server.contains("SERVER_STOPPING") && server.contains("cargo.dropOnDeath(stack ->")
+                && !server.contains("player.dropItem(stack"),"death settlement uses confirmed spawn results without clearing cargo first");
         check(entity.contains("TrackedData<Boolean> RETURNING") && entity.contains("returning()?inventory.displayStack()"),"returned display stack is independent of an empty selected slot");
         check(client.contains("!tool.returning()") && client.contains("RELEASED.contains") && client.contains("FACING.keySet().retainAll(controllingOwners)"),"body gaze and facing stop while return glow remains");
         check(!section(client,"private static void reset(","private static void clearVisuals(").contains("RemoteHeldAnimation.clear()"),"camera reset keeps return interpolation");

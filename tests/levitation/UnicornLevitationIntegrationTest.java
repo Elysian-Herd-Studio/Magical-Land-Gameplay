@@ -34,6 +34,23 @@ public final class UnicornLevitationIntegrationTest {
         String fallMixin = Files.readString(root.resolve("java/top/csituka/magicaland/gameplay/mixin/UnicornLevitationFallMixin.java"));
         check(network.contains("NetworkThreadUtils;forceMainThread") && network.contains("shift = At.Shift.AFTER"), "main-thread injection");
         check(network.contains("requestedTeleportPos == null") && network.contains("@At(\"RETURN\")"), "teleport/final floating guards");
+        var teleportTarget = handler.methods.stream().filter(m -> m.name.equals("requestTeleport")
+                && m.desc.equals("(DDDFFLjava/util/Set;)V")).findFirst().orElseThrow();
+        check(call(teleportTarget, "updatePositionAndAngles") >= 0
+                && call(teleportTarget, "updatePositionAndAngles") < call(teleportTarget, "sendPacket"),
+                "actual teleport hook target commits absolute position before packet send and RETURN");
+        check(network.contains("requestTeleport(DDDFFLjava/util/Set;)V")
+                && network.contains("if (magicaland$newLevitationTeleport) UnicornLevitationServer.teleported(player, flags)"),
+                "resolved vanilla teleport overload notifies session after successful return");
+        check(network.contains("requestedTeleportPos.x != x || requestedTeleportPos.y != y || requestedTeleportPos.z != z"),
+                "same pending teleport retransmission cannot renew the grace window");
+        check(server.contains("session.correctingMovement = true;")
+                && server.contains("finally { session.correctingMovement = false; }")
+                && server.contains("!session.rules.open() || session.correctingMovement"),
+                "own movement corrections bypass authorized-teleport reset even on exception");
+        check(server.contains("session.position = player.getPos(); session.observedTick = now(player);")
+                && server.contains("flags.contains(PositionFlag.X), flags.contains(PositionFlag.Y), flags.contains(PositionFlag.Z)"),
+                "authorized teleport reanchors samples and follows vanilla relative-axis velocity semantics");
         check(!server.contains(".move(") && !server.contains("setPosition(") && !server.contains("setNoGravity("), "no double movement or gravity flag");
         check(!server.matches("(?s).*\\.(allowFlying|flying|invulnerable)\\s*=.*"), "no permission writes");
         check(!server.contains("rules.spend") && !server.contains("rules.regenerate") && !server.contains("RaceState") && !server.contains("NbtElement"), "no mana cost, recovery or NBT writes");

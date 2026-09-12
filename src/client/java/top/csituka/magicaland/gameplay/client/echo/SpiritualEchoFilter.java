@@ -144,6 +144,8 @@ public final class SpiritualEchoFilter implements AutoCloseable {
         if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE
                 || glGetInteger(GL_DRAW_BUFFER0) != GL_COLOR_ATTACHMENT0 || glGetInteger(GL_SAMPLES) != 0)
             return false;
+        for (int i = 1; i < glGetInteger(GL_MAX_DRAW_BUFFERS); i++)
+            if (glGetInteger(GL_DRAW_BUFFER0 + i) != GL_NONE) return false;
         if (attachment(GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING) != GL_LINEAR) return false;
         for (int channel : new int[] {GL_FRAMEBUFFER_ATTACHMENT_RED_SIZE, GL_FRAMEBUFFER_ATTACHMENT_GREEN_SIZE,
                 GL_FRAMEBUFFER_ATTACHMENT_BLUE_SIZE, GL_FRAMEBUFFER_ATTACHMENT_ALPHA_SIZE})

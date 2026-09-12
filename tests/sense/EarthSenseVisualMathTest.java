@@ -9,17 +9,6 @@ import org.joml.Vector4f;
 public final class EarthSenseVisualMathTest {
     private static int checks;
     public static void main(String[] args) {
-        near(0, Math.sin(EarthSenseVisualMath.angle(0, 0)), "forward horizontal");
-        near(1, Math.sin(EarthSenseVisualMath.angle(4, 0)), "west is screen right facing south");
-        near(-1, Math.sin(EarthSenseVisualMath.angle(12, 0)), "east is screen left facing south");
-        near(1, -Math.cos(EarthSenseVisualMath.angle(8, 0)), "rear goes lower half");
-        for (int bearing = 0; bearing < 16; bearing++) for (int yaw = -1440; yaw <= 1440; yaw += 7) {
-            double angle = EarthSenseVisualMath.angle(bearing, yaw);
-            near(Math.sin(angle), Math.sin(EarthSenseVisualMath.angle(bearing, yaw + 360)), "yaw wrap");
-            near(Math.cos(angle), Math.cos(EarthSenseVisualMath.angle(bearing, yaw + 360)), "yaw wrap y");
-            near(-Math.sin(angle), Math.sin(EarthSenseVisualMath.angle(bearing, yaw + 180)), "front-view reverse x");
-            near(-Math.cos(angle), Math.cos(EarthSenseVisualMath.angle(bearing, yaw + 180)), "front-view reverse y");
-        }
         var random = new Random(90310);
         for (int i = 0; i < 12000; i++) {
             float r = random.nextFloat(), g = random.nextFloat(), b = random.nextFloat(), a = random.nextFloat();
@@ -35,39 +24,12 @@ public final class EarthSenseVisualMathTest {
         }
         near(0, EarthSenseVisualMath.clamp(Float.NaN), "NaN disabled");
         near(0, EarthSenseVisualMath.clamp(Float.POSITIVE_INFINITY), "infinite disabled");
-        var pulses = new EarthSenseVisualMath.Pulses();
-        near(1, pulses.observe(0, 0, 255, 10), "first pulse");
-        float older = pulses.observe(0, 0, 255, 15);
-        check(older < 1 && older > 0, "same packet fades");
-        near(older, pulses.observe(0, 0, 255, 15), "paused/repeated frame stable");
-        near(1, pulses.observe(0, 0, 0, 15), "byte rollover is new pulse");
-        near(1, pulses.observe(0, 1, 0, 15), "kind isolated");
-        near(1, pulses.observe(1, 0, 0, 15), "bearing isolated");
-        near(0, pulses.observe(0, 0, 0, 34), "pulse expires");
-        near(1, pulses.observe(0, 0, 0, 1), "clock reset clears pulse history");
-        pulses.clear();
-        near(1, pulses.observe(0, 0, 0, 1), "new world pulse");
+        near(0, EarthSenseVisualMath.pulse(-1), "negative pulse age is silent");
+        near(0, EarthSenseVisualMath.pulse(Double.NaN), "invalid pulse age is silent");
         for (int fps : new int[] {30, 60, 144}) for (int i = 0; i <= fps * 2; i++) {
             double ticks = i * 20.0 / fps;
             near(Math.max(0, ticks >= 18 ? 0 : Math.pow(1 - ticks / 18, 2)), EarthSenseVisualMath.pulse(ticks), "frame independent");
         }
-        for (float pulse : new float[] {0, .2f, .8f, 1}) {
-            float previous = 0;
-            for (int strength = 1; strength <= 4; strength++) {
-                float value = EarthSenseVisualMath.intensity(strength, pulse);
-                check(value > previous && value <= 1, "four strengths distinct");
-                previous = value;
-            }
-        }
-        for (int width = 80; width <= 1000; width += 13) for (int height = 80; height <= 700; height += 11)
-            for (int legendBottom : new int[] {36, 48, 70, 100}) {
-                var layout = EarthSenseVisualMath.layout(width, height, legendBottom);
-                if (layout == null) continue;
-                check(layout.x() - layout.radiusX() * 1.59f - 5 >= 0, "ring fits screen left");
-                check(layout.x() + layout.radiusX() * 1.59f + 5 <= width, "ring fits screen right");
-                check(layout.y() + layout.radiusY() * 1.59f + 5 <= height - 68, "ring stays above hotbar and health");
-                check(layout.y() - layout.radiusY() * 1.59f - 8 >= legendBottom, "ring does not obscure legend");
-            }
         projectionAndClouds();
         edgeClouds();
         System.out.println("PASS earth sense visual math: " + checks);

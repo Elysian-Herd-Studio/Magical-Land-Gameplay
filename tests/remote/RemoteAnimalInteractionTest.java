@@ -37,11 +37,11 @@ public final class RemoteAnimalInteractionTest {
         check(interact.contains("ItemStackstack=s.cargo.selectedStack()"),"attack reads selected cargo");
         check(interact.contains("booleanmelee=RemoteCombat.canAttack(stack)"),"ordinary nonempty items reach melee gate");
         check(interact.contains("p.getAttackCooldownProgress(0)>=1"),"melee retains attack cooldown");
-        ordered(interact,"canAttack(p,tool,target)","AttackEntityCallback.EVENT.invoker().interact(","canStrike(s,target)","p.attack(target)");
+        ordered(interact,"canAttack(p,tool,target,victim.getPos())","AttackEntityCallback.EVENT.invoker().interact(","canStrike(s,target)","p.attack(target)");
         String strike=body(server,"private static boolean canStrike(");
         for (String guard:new String[]{"ACTIVE.get(p.getUuid())!=s","!s.rules.canInteract()","!canReturn(s)",
-                "!RemoteCombat.canAttack(s.cargo.selectedStack())","p.getAttackCooldownProgress(0)<1","!canAttack(p,tool,target)",
-                "tool.getRotationVec(1).multiply(3)","box.raycast(from,to)"})
+                "!RemoteCombat.canAttack(s.cargo.selectedStack())","p.getAttackCooldownProgress(0)<1","canAttack(p,tool,target,point)",
+                "tool.getRotationVec(1).multiply(3)","RemoteTargeting.hitPoint("})
             check(strike.contains(guard),"attack callback revalidates "+guard);
         check(interact.contains("from=tool.getEyePos(),to=from.add(tool.getRotationVec(1).multiply(3))"),"tool-origin interaction limited to three blocks");
         check(interact.contains("!loaded(world,newBox(from,to))"),"interaction does not force unloaded chunks");

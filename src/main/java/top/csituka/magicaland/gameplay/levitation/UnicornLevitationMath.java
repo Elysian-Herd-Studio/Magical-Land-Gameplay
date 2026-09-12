@@ -25,11 +25,6 @@ public final class UnicornLevitationMath {
     /** 返回受控移动本刻的速度；OFF 原样保留，调用方负责原版重力与碰撞。 */
     public static Motion step(Motion velocity, float yaw, float forward, float sideways,
                               Mode mode, double feetY, double surfaceY) {
-        return step(velocity, yaw, forward, sideways, mode, feetY, surfaceY, mode == Mode.HOVER);
-    }
-
-    public static Motion step(Motion velocity, float yaw, float forward, float sideways,
-                              Mode mode, double feetY, double surfaceY, boolean horizontalBoost) {
         if (velocity == null || mode == null) throw new IllegalArgumentException("Missing motion state");
         if (mode == Mode.OFF) return velocity;
         double angle = Math.toRadians(Float.isFinite(yaw) ? yaw : 0);
@@ -108,11 +103,6 @@ public final class UnicornLevitationMath {
 
     public static double probeDepth(double verticalVelocity) {
         return clamp(stoppingDistance(verticalVelocity) + .75, 1.25, MAX_PROBE_DEPTH);
-    }
-
-    public static boolean settled(double verticalVelocity, double clearance) {
-        return Double.isFinite(verticalVelocity) && Double.isFinite(clearance)
-                && Math.abs(verticalVelocity) <= .03 && clearance >= -.01 && clearance <= .04;
     }
 
     private static double axis(float value) { return Float.isFinite(value) ? clamp(value, -1, 1) : 0; }

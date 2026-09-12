@@ -4,6 +4,8 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL33C;
+import org.lwjgl.opengl.GL40C;
+import org.lwjgl.opengl.ARBDrawBuffersBlend;
 import org.lwjgl.system.MemoryStack;
 import static org.lwjgl.opengl.GL32C.*;
 
@@ -73,13 +75,15 @@ public final class EarthSenseFilter implements AutoCloseable {
             if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE
                     || glGetInteger(GL_DRAW_BUFFER0) != GL_COLOR_ATTACHMENT0 || glGetInteger(GL_SAMPLES) != 0)
                 return false;
+            for (int i = 1; i < glGetInteger(GL_MAX_DRAW_BUFFERS); i++)
+                if (glGetInteger(GL_DRAW_BUFFER0 + i) != GL_NONE) return false;
             int encoding = glGetFramebufferAttachmentParameteri(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                     GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING);
             if (encoding != GL_LINEAR || glGetFramebufferAttachmentParameteri(GL_DRAW_FRAMEBUFFER,
                     GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_RED_SIZE) != 8) return false;
             prepare(width, height);
             glDisable(GL_SCISSOR_TEST);
-            glDisable(GL_BLEND);
+            glDisablei(GL_BLEND, 0);
             glDisable(GL_DEPTH_TEST);
             glDisable(GL_STENCIL_TEST);
             glDisable(GL_CULL_FACE);
@@ -88,7 +92,7 @@ public final class EarthSenseFilter implements AutoCloseable {
             glDisable(GL_DITHER);
             glDisable(GL_COLOR_LOGIC_OP);
             for (int i = 0; i < glGetInteger(GL_MAX_CLIP_DISTANCES); i++) glDisable(GL_CLIP_DISTANCE0 + i);
-            glColorMask(true, true, true, true);
+            glColorMaski(0, true, true, true, true);
             glDepthMask(false);
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
@@ -107,9 +111,9 @@ public final class EarthSenseFilter implements AutoCloseable {
             glDrawArrays(GL_TRIANGLES, 0, 3);
             if (blobProgram != 0 && !blobs.isEmpty()) {
                 glUseProgram(blobProgram);
-                glEnable(GL_BLEND);
-                glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
-                glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
+                glEnablei(GL_BLEND, 0);
+                blendEquation(GL_FUNC_ADD, GL_FUNC_ADD);
+                blendFunction(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
                 for (int i = 0; i < Math.min(32, blobs.size()); i++) {
                     var blob = blobs.get(i);
                     glUniform4f(blobRect, blob.x(), blob.y(), blob.radiusX(), blob.radiusY());
@@ -159,6 +163,29 @@ public final class EarthSenseFilter implements AutoCloseable {
     private static boolean samplersAvailable() {
         var caps = GL.getCapabilities();
         return (caps.OpenGL33 || caps.GL_ARB_sampler_objects) && caps.glBindSampler != 0;
+    }
+
+    private static boolean indexedBlend() {
+        var caps = GL.getCapabilities();
+        return caps.OpenGL40 || caps.GL_ARB_draw_buffers_blend;
+    }
+
+    private static int blendState(int name) {
+        return indexedBlend() ? glGetIntegeri(name, 0) : glGetInteger(name);
+    }
+
+    private static void blendFunction(int srcRgb, int dstRgb, int srcAlpha, int dstAlpha) {
+        if (GL.getCapabilities().OpenGL40) GL40C.glBlendFuncSeparatei(0, srcRgb, dstRgb, srcAlpha, dstAlpha);
+        else if (GL.getCapabilities().GL_ARB_draw_buffers_blend)
+            ARBDrawBuffersBlend.glBlendFuncSeparateiARB(0, srcRgb, dstRgb, srcAlpha, dstAlpha);
+        else glBlendFuncSeparate(srcRgb, dstRgb, srcAlpha, dstAlpha);
+    }
+
+    private static void blendEquation(int rgb, int alpha) {
+        if (GL.getCapabilities().OpenGL40) GL40C.glBlendEquationSeparatei(0, rgb, alpha);
+        else if (GL.getCapabilities().GL_ARB_draw_buffers_blend)
+            ARBDrawBuffersBlend.glBlendEquationSeparateiARB(0, rgb, alpha);
+        else glBlendEquationSeparate(rgb, alpha);
     }
 
     private static int uniform(int program, String name) {
@@ -235,14 +262,14 @@ public final class EarthSenseFilter implements AutoCloseable {
         final int activeTexture = glGetInteger(GL_ACTIVE_TEXTURE), texture0;
         final boolean samplers = samplersAvailable();
         final int sampler0 = samplers ? glGetIntegeri(GL33C.GL_SAMPLER_BINDING, 0) : 0;
-        final int srcRgb = glGetInteger(GL_BLEND_SRC_RGB), dstRgb = glGetInteger(GL_BLEND_DST_RGB);
-        final int srcAlpha = glGetInteger(GL_BLEND_SRC_ALPHA), dstAlpha = glGetInteger(GL_BLEND_DST_ALPHA);
-        final int equationRgb = glGetInteger(GL_BLEND_EQUATION_RGB), equationAlpha = glGetInteger(GL_BLEND_EQUATION_ALPHA);
+        final int srcRgb = blendState(GL_BLEND_SRC_RGB), dstRgb = blendState(GL_BLEND_DST_RGB);
+        final int srcAlpha = blendState(GL_BLEND_SRC_ALPHA), dstAlpha = blendState(GL_BLEND_DST_ALPHA);
+        final int equationRgb = blendState(GL_BLEND_EQUATION_RGB), equationAlpha = blendState(GL_BLEND_EQUATION_ALPHA);
         final int unpackBuffer = glGetInteger(GL_PIXEL_UNPACK_BUFFER_BINDING);
         final int[] viewport = new int[4], polygon = new int[2];
         final boolean[] color = new boolean[4];
-        final boolean depthMask = glGetBoolean(GL_DEPTH_WRITEMASK);
-        final int[] capabilities = {GL_SCISSOR_TEST, GL_BLEND, GL_DEPTH_TEST, GL_STENCIL_TEST, GL_CULL_FACE,
+        final boolean depthMask = glGetBoolean(GL_DEPTH_WRITEMASK), blend = glIsEnabledi(GL_BLEND, 0);
+        final int[] capabilities = {GL_SCISSOR_TEST, GL_DEPTH_TEST, GL_STENCIL_TEST, GL_CULL_FACE,
                 GL_RASTERIZER_DISCARD, GL_FRAMEBUFFER_SRGB, GL_DITHER, GL_COLOR_LOGIC_OP};
         final boolean[] enabled = new boolean[capabilities.length];
         final boolean[] clips = new boolean[glGetInteger(GL_MAX_CLIP_DISTANCES)];
@@ -251,7 +278,7 @@ public final class EarthSenseFilter implements AutoCloseable {
             glGetIntegerv(GL_POLYGON_MODE, polygon);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 ByteBuffer mask = stack.malloc(4);
-                glGetBooleanv(GL_COLOR_WRITEMASK, mask);
+                glGetBooleani_v(GL_COLOR_WRITEMASK, 0, mask);
                 for (int i = 0; i < 4; i++) color[i] = mask.get(i) != 0;
             }
             for (int i = 0; i < capabilities.length; i++) enabled[i] = glIsEnabled(capabilities[i]);
@@ -271,10 +298,11 @@ public final class EarthSenseFilter implements AutoCloseable {
             glActiveTexture(activeTexture);
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, unpackBuffer);
             glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-            glColorMask(color[0], color[1], color[2], color[3]);
+            glColorMaski(0, color[0], color[1], color[2], color[3]);
             glDepthMask(depthMask);
-            glBlendFuncSeparate(srcRgb, dstRgb, srcAlpha, dstAlpha);
-            glBlendEquationSeparate(equationRgb, equationAlpha);
+            blendFunction(srcRgb, dstRgb, srcAlpha, dstAlpha);
+            blendEquation(equationRgb, equationAlpha);
+            if (blend) glEnablei(GL_BLEND, 0); else glDisablei(GL_BLEND, 0);
             glPolygonMode(GL_FRONT_AND_BACK, polygon[0]);
             for (int i = 0; i < capabilities.length; i++) {
                 if (enabled[i]) glEnable(capabilities[i]); else glDisable(capabilities[i]);

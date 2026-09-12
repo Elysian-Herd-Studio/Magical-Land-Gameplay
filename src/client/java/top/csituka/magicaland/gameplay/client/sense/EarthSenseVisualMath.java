@@ -16,21 +16,10 @@ public final class EarthSenseVisualMath {
         return Float.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
     }
 
-    // Bearing 0 is +Z, 4 is -X, following Minecraft yaw. Pitch is deliberately absent.
-    public static double angle(int bearing, float viewYaw) {
-        if (!Float.isFinite(viewYaw)) return 0;
-        return Math.toRadians(Math.IEEEremainder(Math.floorMod(bearing, 16) * 22.5 - viewYaw, 360));
-    }
-
     public static float pulse(double elapsedTicks) {
         if (!Double.isFinite(elapsedTicks) || elapsedTicks < 0 || elapsedTicks >= 18) return 0;
         float remaining = (float) (1 - elapsedTicks / 18);
         return remaining * remaining;
-    }
-
-    public static float intensity(int strength, float pulse) {
-        int level = Math.max(1, Math.min(4, strength));
-        return Math.min(1, .18f + level * .13f + clamp(pulse) * .23f);
     }
 
     public static float luminance(float red, float green, float blue) {
@@ -42,8 +31,6 @@ public final class EarthSenseVisualMath {
         return new float[] {red + (gray - red) * mix, green + (gray - green) * mix,
                 blue + (gray - blue) * mix, alpha};
     }
-
-    public record Layout(float x, float y, float radiusX, float radiusY) {}
 
     public record Blob(float x, float y, float radiusX, float radiusY, float red, float green, float blue,
                        float activity, float alpha, float pulse) {}
@@ -263,35 +250,4 @@ public final class EarthSenseVisualMath {
         }
     }
 
-    public static Layout layout(int width, int height, int legendBottom) {
-        float top = Math.max(10, legendBottom + 10), bottom = height - 68;
-        if (width < 100 || bottom - top < 34) return null;
-        float ry = Math.min(38, (bottom - top - 14) / 3.2f);
-        return new Layout(width * .5f, (top + bottom) * .5f, Math.min(105, width * .26f), ry);
-    }
-
-    public static final class Pulses {
-        private final int[] pulses = new int[64];
-        private final double[] starts = new double[64];
-        private final boolean[] present = new boolean[64];
-        private double lastTime = Double.NaN;
-
-        public void clear() {
-            java.util.Arrays.fill(present, false);
-            lastTime = Double.NaN;
-        }
-
-        public float observe(int bearing, int kind, int pulse, double ticks) {
-            if (bearing < 0 || bearing > 15 || kind < 0 || kind > 3 || !Double.isFinite(ticks)) return 0;
-            if (Double.isFinite(lastTime) && ticks < lastTime) clear();
-            lastTime = ticks;
-            int index = bearing * 4 + kind, value = pulse & 255;
-            if (!present[index] || pulses[index] != value) {
-                present[index] = true;
-                pulses[index] = value;
-                starts[index] = ticks;
-            }
-            return EarthSenseVisualMath.pulse(ticks - starts[index]);
-        }
-    }
 }

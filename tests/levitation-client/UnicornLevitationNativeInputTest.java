@@ -57,18 +57,18 @@ public final class UnicornLevitationNativeInputTest {
         for (Mode mode : new Mode[]{Mode.ASCEND,Mode.HOVER,Mode.SURFACE}) for (boolean shift : new boolean[]{false,true}) {
             var raw = new UnicornLevitationInput(true,shift,true,false,false,false,0);
             var velocity = new Motion(0,0,0);
-            for (int tick=0;tick<20;tick++) velocity=UnicornLevitationMath.step(velocity,0,raw.forwardAxis(false),0,mode,1,1,shift);
+            for (int tick=0;tick<20;tick++) velocity=UnicornLevitationMath.step(velocity,0,raw.forwardAxis(false),0,mode,1,1);
             near(velocity.z(),mode==Mode.ASCEND?.065:.216,"mode-defined horizontal speed, no extra crouch factor: "+mode+" shift="+shift);
             if(mode==Mode.ASCEND)near(velocity.y(),.16,"vertical ascent unchanged");
         }
-        var hover=UnicornLevitationMath.step(new Motion(0,.16,0),0,0,0,Mode.HOVER,1,1,true);
+        var hover=UnicornLevitationMath.step(new Motion(0,.16,0),0,0,0,Mode.HOVER,1,1);
         near(hover.y(),.14,"Shift eases vertical speed over multiple frames");
-        for(int frame=0;frame<7;frame++) hover=UnicornLevitationMath.step(hover,0,0,0,Mode.HOVER,1,1,true);
+        for(int frame=0;frame<7;frame++) hover=UnicornLevitationMath.step(hover,0,0,0,Mode.HOVER,1,1);
         near(hover.y(),0,"Shift holds level after braking");
-        var rise=UnicornLevitationMath.step(hover,0,0,0,Mode.ASCEND,1,1,false);
+        var rise=UnicornLevitationMath.step(hover,0,0,0,Mode.ASCEND,1,1);
         near(rise.y(),.08,"release Shift resumes rise continuously");
         var use=new Motion(0,0,0);
-        for(int tick=0;tick<20;tick++)use=UnicornLevitationMath.step(use,0,.2f,0,Mode.HOVER,1,1,true);
+        for(int tick=0;tick<20;tick++)use=UnicornLevitationMath.step(use,0,.2f,0,Mode.HOVER,1,1);
         near(use.z(),.216*.2,"item use slows boosted horizontal speed once");
     }
     private static void permission() {

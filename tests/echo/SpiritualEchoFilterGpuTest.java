@@ -29,19 +29,21 @@ public final class SpiritualEchoFilterGpuTest {
         boolean strict = args.length < 2 || !args[1].equals("native");
         if (strict) {
             Configuration.OPENGL_MAXVERSION.set("3.2");
-            Configuration.OPENGL_EXTENSION_FILTER.set("GL_ARB_sampler_objects");
+            Configuration.OPENGL_EXTENSION_FILTER.set("GL_ARB_sampler_objects,GL_ARB_draw_buffers_blend");
         }
         if (!glfwInit()) throw new AssertionError("GLFW init");
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, strict ? 3 : 4);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, strict ? 2 : 0);
         glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
         long window = glfwCreateWindow(64, 64, "Spiritual echo offscreen regression", 0, 0);
         if (window == 0) throw new AssertionError("Hidden context");
         glfwMakeContextCurrent(window); GL.createCapabilities();
         if (strict) check(GL.getCapabilities().OpenGL32 && !GL.getCapabilities().OpenGL33
-                && !GL.getCapabilities().GL_ARB_sampler_objects, "strict GL3.2 without sampler objects");
+                && !GL.getCapabilities().GL_ARB_sampler_objects && !GL.getCapabilities().GL_ARB_draw_buffers_blend,
+                "strict GL3.2 without sampler objects or indexed blend parameters");
+        else check(GL.getCapabilities().OpenGL40, "native core 4.0 path");
         String vertex = Files.readString(Path.of(args[0], "spiritual_echo.vsh"));
         String fragment = Files.readString(Path.of(args[0], "spiritual_echo.fsh"));
         try (var filter = new SpiritualEchoFilter(vertex, fragment)) {
@@ -51,6 +53,7 @@ public final class SpiritualEchoFilterGpuTest {
             geometryOnly(filter);
             perspectiveAndMask(filter);
             eligibility(filter, vertex, fragment);
+            multipleDrawTargets(filter);
             check(glGetError() == GL_NO_ERROR, "final GL error clear");
             System.out.println("PASS spiritual echo actual GPU: " + checks + "; strict3.2=" + strict
                     + "; samplers=" + samplers() + "; driver=" + glGetString(GL_VERSION));
@@ -406,7 +409,8 @@ public final class SpiritualEchoFilterGpuTest {
                 GL_VERTEX_ARRAY_BINDING, GL_RENDERBUFFER_BINDING, GL_ACTIVE_TEXTURE, GL_TEXTURE_BINDING_2D,
                 GL_PIXEL_UNPACK_BUFFER_BINDING, GL_PIXEL_PACK_BUFFER_BINDING, GL_ARRAY_BUFFER_BINDING,
                 GL_DEPTH_FUNC, GL_DEPTH_WRITEMASK, GL_STENCIL_WRITEMASK, GL_BLEND_SRC_RGB, GL_BLEND_DST_RGB,
-                GL_BLEND_SRC_ALPHA, GL_BLEND_DST_ALPHA, GL_BLEND_EQUATION_RGB, GL_BLEND_EQUATION_ALPHA, GL_READ_BUFFER, GL_DRAW_BUFFER0})
+                GL_BLEND_SRC_ALPHA, GL_BLEND_DST_ALPHA, GL_BLEND_EQUATION_RGB, GL_BLEND_EQUATION_ALPHA, GL_READ_BUFFER,
+                GL_DRAW_BUFFER0, GL_DRAW_BUFFER1})
             result.add(glGetInteger(parameter));
         int active = glGetInteger(GL_ACTIVE_TEXTURE);
         for (int i = 0; i < 2; i++) {
@@ -429,6 +433,34 @@ public final class SpiritualEchoFilterGpuTest {
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0); glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, scene.texture);
         ByteBuffer data = ByteBuffer.allocateDirect(scene.pixels.length); data.put(scene.pixels).flip();
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, scene.width, scene.height, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    }
+    private static void multipleDrawTargets(SpiritualEchoFilter filter) {
+        normal();
+        try (Scene scene = scene(16, 16, GL_DEPTH_COMPONENT24, 0, false);
+             Scene auxiliary = scene(16, 16, GL_DEPTH_COMPONENT24, 0, false)) {
+            glBindFramebuffer(GL_FRAMEBUFFER, scene.fbo);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, auxiliary.texture, 0);
+            glDrawBuffers(new int[] {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1});
+            glClearBufferfv(GL_COLOR, 1, new float[] {.8f, .1f, .6f, .7f});
+            check(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "MRT framebuffer complete");
+            byte[] primary = read(scene), extra = read(auxiliary);
+            glColorMaski(0, false, true, false, true); glColorMaski(1, true, false, true, false);
+            glEnablei(GL_BLEND, 0); glDisablei(GL_BLEND, 1);
+            int[] before = snapshot();
+            check(!filter.captureDepth(scene.fbo, scene.width, scene.height), "MRT depth capture skipped");
+            check(Arrays.equals(before, snapshot()), "MRT capture rejection preserves state");
+            glDrawBuffers(new int[] {GL_COLOR_ATTACHMENT0});
+            check(filter.captureDepth(scene.fbo, scene.width, scene.height), "single output permits depth capture");
+            glDrawBuffers(new int[] {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1});
+            before = snapshot();
+            check(!filter.render(scene.fbo, scene.width, scene.height, INVERSE, ORIGIN, .43f, 1, 0xffffff),
+                    "MRT enabled after depth capture prevents final color blit");
+            check(Arrays.equals(before, snapshot()), "MRT render rejection preserves state");
+            check(Arrays.equals(primary, read(scene)), "MRT primary attachment unchanged");
+            check(Arrays.equals(extra, read(auxiliary)), "MRT auxiliary attachment unchanged");
+            invariants(scene);
+        }
+        normal();
     }
     private static byte[] read(Scene scene) {
         int previous = glGetInteger(GL_READ_FRAMEBUFFER_BINDING);

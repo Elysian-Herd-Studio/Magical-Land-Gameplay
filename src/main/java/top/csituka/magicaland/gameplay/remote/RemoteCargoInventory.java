@@ -112,6 +112,9 @@ public final class RemoteCargoInventory extends SimpleInventory {
         }
         return remainder;
     }
+    public int dropOnDeath(Predicate<ItemStack> spawn) {
+        return dropRemainder(stack -> net.minecraft.enchantment.EnchantmentHelper.hasVanishingCurse(stack) || spawn.test(stack));
+    }
     public int dropRemainder(Predicate<ItemStack> spawn) {
         int attempts=0,dropped=0;
         for (int slot=0;slot<MAX_SLOTS && attempts<SETTLEMENT_SPAWN_LIMIT;slot++) {

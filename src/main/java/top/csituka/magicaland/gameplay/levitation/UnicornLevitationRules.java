@@ -2,6 +2,7 @@ package top.csituka.magicaland.gameplay.levitation;
 
 public final class UnicornLevitationRules {
     public static final int CHARGE_TICKS = 7, LEASE_TICKS = 20, MAX_SESSIONS = 32, MAX_MOVE_PACKETS = 5;
+    public static final int MOVE_PACKET_BURST = 20;
     public static final double MAX_MANA = 100;
     private long token, lastInput;
     private int sequence = -1, charge;

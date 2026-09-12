@@ -26,14 +26,12 @@ import net.minecraft.command.argument.EntityArgumentType;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.ItemEntity;
-import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.SpawnGroup;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ProjectileUtil;
-import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.ItemUsageContext;
 import net.minecraft.item.MiningToolItem;
@@ -153,8 +151,13 @@ public final class RemoteToolServer {
             abort(player,RemoteProtocol.INVALID);
             RemoteCargoInventory cargo=RemoteCargoState.get(player.getServer()).inventory(player.getUuid());
             if (!player.getWorld().getGameRules().getBoolean(GameRules.KEEP_INVENTORY)) {
-                for (ItemStack stack:cargo.takeAll()) if (!EnchantmentHelper.hasVanishingCurse(stack)
-                        && player.dropItem(stack,true,false)==null) cargo.retain(stack);
+                cargo.dropOnDeath(stack -> {
+                    ItemEntity item=new ItemEntity(player.getWorld(),player.getX(),player.getEyeY()-.3,player.getZ(),stack);
+                    item.setPickupDelay(40);
+                    double angle=player.getRandom().nextFloat()*Math.PI*2, speed=player.getRandom().nextFloat()*.5;
+                    item.setVelocity(-Math.sin(angle)*speed,.2,Math.cos(angle)*speed);
+                    return player.getServerWorld().spawnEntity(item);
+                });
             }
         });
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
@@ -433,9 +436,12 @@ public final class RemoteToolServer {
         if (s.tool.action()==RemoteAction.MINING) s.tool.startAction(RemoteAction.NONE);
     }
     public static boolean canAttack(ServerPlayerEntity player,RemoteToolEntity tool,Entity target) {
-        return target!=player && target instanceof LivingEntity && target.isAlive() && !target.isSpectator() && target.canHit()
-                && target.getWorld()==tool.getWorld() && (!(target instanceof PlayerEntity other) || player.shouldDamagePlayer(other))
-                && clearRay(tool,tool.getEyePos(),target.getBoundingBox().getCenter());
+        return canAttack(player,tool,target,target.getBoundingBox().getCenter());
+    }
+    private static boolean canAttack(ServerPlayerEntity player,RemoteToolEntity tool,Entity target,Vec3d point) {
+        return target!=player && RemoteTargeting.attackable(target) && target.getWorld()==tool.getWorld()
+                && (!(target instanceof PlayerEntity other) || player.shouldDamagePlayer(other))
+                && point!=null && clearRay(tool,tool.getEyePos(),point);
     }
     private static void drop(RemoteSession s) {
         var request=s.pendingDrop;
@@ -467,12 +473,12 @@ public final class RemoteToolServer {
         boolean melee=RemoteCombat.canAttack(stack);
         double reach=hit.getType()==HitResult.Type.MISS?9:from.squaredDistanceTo(hit.getPos());
         var victim=ProjectileUtil.raycast(tool,from,to,tool.getBoundingBox().stretch(to.subtract(from)).expand(1),
-                entity -> entity!=p && entity instanceof LivingEntity && entity.isAlive() && !entity.isSpectator() && entity.canHit(),reach);
+                entity -> entity!=p && RemoteTargeting.attackable(entity),reach);
         if (attack && melee && victim!=null) {
             clearMining(s); var target=victim.getEntity();
             if (p.getAttackCooldownProgress(0)>=1) {
                 tool.startAction(RemoteAction.SWING); s.lastSwingTick=now;
-                if (canAttack(p,tool,target) && AttackEntityCallback.EVENT.invoker().interact(p,world,Hand.MAIN_HAND,target,victim)==ActionResult.PASS
+                if (canAttack(p,tool,target,victim.getPos()) && AttackEntityCallback.EVENT.invoker().interact(p,world,Hand.MAIN_HAND,target,victim)==ActionResult.PASS
                         && canStrike(s,target)) {
                     RemoteActionContext.current().resetHit(); p.attack(target);
                     p.resetLastAttackedTicks();
@@ -523,11 +529,10 @@ public final class RemoteToolServer {
     private static boolean canStrike(RemoteSession s,Entity target) {
         var p=s.player; var tool=s.tool;
         if (ACTIVE.get(p.getUuid())!=s || !s.rules.canInteract() || !canReturn(s)
-                || !RemoteCombat.canAttack(s.cargo.selectedStack()) || p.getAttackCooldownProgress(0)<1
-                || !canAttack(p,tool,target)) return false;
+                || !RemoteCombat.canAttack(s.cargo.selectedStack()) || p.getAttackCooldownProgress(0)<1) return false;
         Vec3d from=tool.getEyePos(),to=from.add(tool.getRotationVec(1).multiply(3));
-        var box=target.getBoundingBox().expand(target.getTargetingMargin());
-        return box.contains(from) || box.raycast(from,to).isPresent();
+        Vec3d point=RemoteTargeting.hitPoint(target.getBoundingBox().expand(target.getTargetingMargin()),from,to);
+        return canAttack(p,tool,target,point);
     }
     private static boolean canFeed(RemoteSession s,AnimalEntity animal) {
         var p=s.player; var tool=s.tool; var world=p.getServerWorld();

@@ -42,7 +42,6 @@ public final class UnicornLevitationPhysicsTest {
         check(chooseMode(true,false,false,Mode.ASCEND,.16,Double.NaN,false)==Mode.OFF,"release stops active lift");
         check(chooseMode(true,false,false,Mode.SURFACE,-.01,-.5,true)==Mode.OFF,"no out-of-range fluid promotion");
         check(chooseMode(true,false,true,Mode.LANDING,0,0,false)==Mode.OFF,"solid contact ends landing");
-        check(!settled(-.5,.01)&&!settled(0,.3)&&settled(-.02,.03),"settled requires low speed and close contact");
         for(double down:new double[]{.1,.3,.5,1,2,3.9}){trajectory(down,false);trajectory(down,true);}
         for(double start:new double[]{.12,.15,.25,.35}){double y=start;var m=Motion.ZERO;for(int i=0;i<100;i++){var n=step(m,0,1,0,Mode.SURFACE,y,0);check(Math.abs(n.y()-m.y())<=.10000001,"bounded surface correction");y+=n.y();m=n;check(y>.1,"fluid clearance never lost in steady walking");}near(y,SURFACE_CLEARANCE,"surface convergence");}
     }
@@ -69,15 +68,15 @@ public final class UnicornLevitationPhysicsTest {
         check(chooseMode(true,false,true,false,Mode.HOVER,-.5,1,false,4)==Mode.LANDING,"Space release keeps dangerous fall protection");
         check(chooseMode(true,false,true,false,Mode.HOVER,0,.15,true,0)==Mode.SURFACE,"Space release keeps water support");
         near(HORIZONTAL_SPEED,.065,"ascent uses sneaking horizontal speed");near(BOOST_HORIZONTAL_SPEED,.216,"hover uses normal walking horizontal speed");
-        for(Mode mode:new Mode[]{Mode.ASCEND,Mode.HOVER,Mode.SURFACE,Mode.LANDING})for(boolean shift:new boolean[]{false,true}){var m=Motion.ZERO;for(int i=0;i<40;i++)m=step(m,0,1,1,mode,.15,0,shift);near(m.horizontalSpeed(),mode==Mode.HOVER||mode==Mode.SURFACE?.216:.065,"mode determines speed; no Shift sprint");}
+        for(Mode mode:new Mode[]{Mode.ASCEND,Mode.HOVER,Mode.SURFACE,Mode.LANDING}){var m=Motion.ZERO;for(int i=0;i<40;i++)m=step(m,0,1,1,mode,.15,0);near(m.horizontalSpeed(),mode==Mode.HOVER||mode==Mode.SURFACE?.216:.065,"mode determines speed; no Shift sprint");}
         for(double vy:new double[]{-4,-1,-.16,0,.16,1,4}) {
             var motion=new Motion(0,vy,0);double y=30;
-            for(int i=0;i<220;i++) {var next=step(motion,0,1,1,Mode.HOVER,y,Double.NaN,true);check(Math.abs(next.y()-motion.y())<=.08000001,"hover never cancels vertical momentum instantly");check(Math.abs(next.y())<=Math.abs(motion.y())+1e-9,"hover brakes monotonically");check(next.horizontalSpeed()<=BOOST_HORIZONTAL_SPEED+1e-9,"boosted diagonal cap");y+=next.y();motion=next;}
+            for(int i=0;i<220;i++) {var next=step(motion,0,1,1,Mode.HOVER,y,Double.NaN);check(Math.abs(next.y()-motion.y())<=.08000001,"hover never cancels vertical momentum instantly");check(Math.abs(next.y())<=Math.abs(motion.y())+1e-9,"hover brakes monotonically");check(next.horizontalSpeed()<=BOOST_HORIZONTAL_SPEED+1e-9,"boosted diagonal cap");y+=next.y();motion=next;}
             near(motion.y(),0,"hover reaches stable altitude");near(motion.horizontalSpeed(),BOOST_HORIZONTAL_SPEED,"hover boost speed");
-            double heldY=y;for(int i=0;i<100;i++){motion=step(motion,0,0,0,Mode.HOVER,y,Double.NaN,true);y+=motion.y();}near(y,heldY,"hover holds final braking altitude");
-            var resumed=step(motion,0,1,0,Mode.ASCEND,y,Double.NaN,false);check(resumed.y()>0&&resumed.y()<=.08000001,"ascent resumes without speed jump");
+            double heldY=y;for(int i=0;i<100;i++){motion=step(motion,0,0,0,Mode.HOVER,y,Double.NaN);y+=motion.y();}near(y,heldY,"hover holds final braking altitude");
+            var resumed=step(motion,0,1,0,Mode.ASCEND,y,Double.NaN);check(resumed.y()>0&&resumed.y()<=.08000001,"ascent resumes without speed jump");
         }
-        var boosted=new Motion(BOOST_HORIZONTAL_SPEED,0,0);var normal=step(boosted,0,0,0,Mode.SURFACE,1,1-SURFACE_CLEARANCE,false);check(normal.horizontalSpeed()>HORIZONTAL_SPEED,"boost release preserves momentum");
+        var boosted=new Motion(BOOST_HORIZONTAL_SPEED,0,0);var normal=step(boosted,0,0,0,Mode.SURFACE,1,1-SURFACE_CLEARANCE);check(normal.horizontalSpeed()>HORIZONTAL_SPEED,"boost release preserves momentum");
     }
     private static void recover() {
         for(double down:new double[]{.1,.5,1,2,4}) {
@@ -85,7 +84,7 @@ public final class UnicornLevitationPhysicsTest {
             boolean lifted=false, held=false; int ticks=0;
             while(ticks++<150) {
                 mode=chooseMode(true,true,true,false,mode,m.y(),Double.NaN,false,5);
-                var next=step(m,0,0,0,mode,100,Double.NaN,true);
+                var next=step(m,0,0,0,mode,100,Double.NaN);
                 check(Math.abs(next.y()-m.y())<=LIFT_ACCELERATION+1e-9,"Shift-start retains bounded falling inertia");
                 if(next.y()>.1)lifted=true;
                 if(mode==Mode.HOVER&&Math.abs(next.y())<1e-8){held=true;break;}
@@ -94,7 +93,7 @@ public final class UnicornLevitationPhysicsTest {
             check(lifted&&held,"falling Shift+Space lifts then settles");
         }
         var m=new Motion(0,ASCEND_SPEED,0);double rise=0;
-        for(int tick=0;tick<8;tick++){m=step(m,0,0,0,Mode.HOVER,0,Double.NaN,true);rise+=m.y();if(tick<7)check(m.y()>0,"no hard stop before eight hover frames");}
+        for(int tick=0;tick<8;tick++){m=step(m,0,0,0,Mode.HOVER,0,Double.NaN);rise+=m.y();if(tick<7)check(m.y()>0,"no hard stop before eight hover frames");}
         near(m.y(),0,"smooth hover stop");check(rise>.5,"visible inertial upward travel");
     }
     private static void naturalFalls() {
@@ -148,7 +147,7 @@ public final class UnicornLevitationPhysicsTest {
             for(int tick=0;tick<200;tick++) {
                 var result=scan(w,body(x,y,.5),motion,768);check(result.complete()&&result.support()!=null,"moving surface support remains loaded and found");var support=result.support();
                 Mode mode=chooseMode(true,false,boost,false,previous,motion.y(),support.distance(),true,0);check(mode==Mode.SURFACE,"ordinary WASD keeps surface mode: x="+x+" y="+y+" vy="+motion.y()+" support="+support);
-                motion=step(motion,0,0,1,mode,y,support.y(),boost);x+=motion.x();y+=motion.y();previous=mode;
+                motion=step(motion,0,0,1,mode,y,support.y());x+=motion.x();y+=motion.y();previous=mode;
                 for(int col=(int)Math.floor(x-.3+.00001);col<=(int)Math.floor(x+.3-.00001);col++){var pos=new BlockPos(col,0,0);double fluidY=w.getFluidState(pos).getHeight(w,pos);check(y>fluidY+.001,"cross-cell walking avoids fluid contact: "+lava+" boost="+boost+" slope="+slope+" x="+x+" y="+y+" fluid="+fluidY);}
             }
             check(x>25,"test walks far outside original collision box");

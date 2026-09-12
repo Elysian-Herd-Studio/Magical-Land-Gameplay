@@ -7,7 +7,7 @@ public final class UnicornLevitationCorrectionTest {
     private static int checks;
 
     public static void main(String[] args) {
-        classifications(); unchangedCredit(); frequency(); recovery();
+        classifications(); unchangedCredit(); frequency(); recovery(); teleportRecovery(); fallingTeleportDebt();
         System.out.println("PASS UnicornLevitationCorrectionTest: " + checks + " finite correction and sustained-abuse checks");
     }
 
@@ -23,7 +23,7 @@ public final class UnicornLevitationCorrectionTest {
         check(budget().validate(0, Double.NaN, 64, 0) == REJECT, "nonfinite is never downgraded to a correction");
         check(budget().validate(0, Double.MAX_VALUE, 64, -Double.MAX_VALUE) == REJECT, "huge finite coordinates remain rejected");
         var budget = budget();
-        for (int packet = 0; packet < 5; packet++) check(budget.validate(0, 0, 64, 0) == ACCEPT, "ordinary packet allowance");
+        for (int packet = 0; packet < UnicornLevitationRules.MOVE_PACKET_BURST; packet++) check(budget.validate(0, 0, 64, 0) == ACCEPT, "bounded packet backlog allowance");
         check(budget.validate(0, 0, 64, 0) == REJECT, "packet flood remains hard rejection");
     }
 
@@ -79,6 +79,71 @@ public final class UnicornLevitationCorrectionTest {
             check(guard.observe(budget.validate(tick, 0, y, z), tick) == ACCEPT, "normal movement resumes after correction");
             budget.advance(tick, 0, 1, 0, Mode.HOVER, y, Double.NaN);
             check(rules.open() && rules.protectsFall(true, tick), "recovery needs no new V activation");
+        }
+    }
+
+    private static void teleportRecovery() {
+        for (boolean relative : new boolean[]{false, true}) {
+            var budget = new UnicornLevitationBudget(0, 64, 0, new Motion(.216, 0, 0));
+            var guard = new UnicornLevitationMovementGuard();
+            budget.advance(0, -90, 1, 0, Mode.HOVER, 64, Double.NaN);
+            check(budget.validate(0, 1.2, 64, 0) == ACCEPT, "consume both fixed credit and next-frame forecast");
+            budget.teleport(1000, 64, 0, relative, false, false);
+            guard.teleported(1);
+            check(budget.expected().x() == (relative ? .216 : 0), "relative axis preserves trusted inertia; absolute axis clears it");
+            Motion motion = budget.expected();
+            double x = 1000;
+            for (int tick = 1; tick <= 1000; tick++) {
+                motion = step(motion, -90, 1, 0, Mode.HOVER, 64, Double.NaN);
+                var verdict = guard.observe(budget.validate(tick, x + motion.x(), 64, 0), tick);
+                check(verdict != REJECT, "borrowed credit after authorized teleport never cancels normal flight");
+                if (tick > 10) check(verdict == ACCEPT, "teleport recovery cannot leave periodic horizontal corrections");
+                if (verdict == ACCEPT) x += motion.x();
+                else { budget.reanchor(x, 64, 0); motion = budget.expected(); }
+                budget.advance(tick, -90, 1, 0, Mode.HOVER, 64, Double.NaN);
+            }
+            check(x > 1190, "teleported flight recovers without restarting the ability");
+        }
+        var guard = new UnicornLevitationMovementGuard();
+        for (int tick : new int[]{0, 1, 2}) check(guard.observe(CORRECT, tick) == CORRECT, "retain previous correction history");
+        guard.teleported(3);
+        check(guard.observe(CORRECT, 3) == CORRECT && guard.observe(CORRECT, 4) == CORRECT, "two-tick teleport phase skew does not add strikes");
+        check(guard.observe(REJECT, 3) == REJECT, "teleport window never suppresses severe movement violations");
+        check(guard.observe(CORRECT, 5) == REJECT, "window expires and previous strikes remain");
+        guard.reset(); guard.teleported(10);
+        for (int tick : new int[]{10, 11, 12, 13, 14}) check(guard.observe(CORRECT, tick) == CORRECT, "correction alone does not extend teleport window");
+        check(guard.observe(CORRECT, 15) == REJECT, "repeated corrective packets cannot renew grace");
+    }
+
+    private static void fallingTeleportDebt() {
+        var budget = new UnicornLevitationBudget(0, 64, 0, new Motion(0, -10, 0));
+        budget.advance(0, 0, 0, 0, Mode.ASCEND, 64, Double.NaN);
+        check(budget.validate(0, 0, 34.2, 0) == ACCEPT, "large existing fall consumes next-frame downward forecast");
+        budget.teleport(0, .35, 0, false, false, false);
+        var guard = new UnicornLevitationMovementGuard(); guard.teleported(1);
+        for (int tick = 1; tick <= 100; tick++) {
+            check(budget.validate(tick, 0, .35, 0) == ACCEPT, "stationary hover after fall teleport");
+            budget.advance(tick, 0, 0, 0, Mode.HOVER, .35, Double.NaN);
+        }
+        double y = .35; Motion motion = Motion.ZERO;
+        for (int tick = 101; tick <= 200; tick++) {
+            motion = step(motion, 0, 0, 0, Mode.SURFACE, y, 0);
+            var verdict = guard.observe(budget.validate(tick, 0, y + motion.y(), 0), tick);
+            check(verdict != REJECT, "old fast-fall debt cannot reject later gentle surface descent");
+            if (verdict == ACCEPT) y += motion.y();
+            else { budget.reanchor(0, y, 0); motion = budget.expected(); }
+            budget.advance(tick, 0, 0, 0, Mode.SURFACE, y, 0);
+        }
+        check(Math.abs(y - SURFACE_CLEARANCE) < .01, "surface settles naturally after absolute-Y teleport");
+        for (double multiplier : new double[]{1.2, 2, 5}) {
+            budget = new UnicornLevitationBudget(0, 64, 0, new Motion(.216, 0, 0));
+            boolean rejected = false;
+            for (int tick = 0; tick < 1000; tick++) {
+                budget.advance(tick, -90, 1, 0, Mode.HOVER, 64, Double.NaN);
+                if (budget.validate(tick, .216 * multiplier, 64, 0) != ACCEPT) { rejected = true; break; }
+                budget.teleport(0, 64, 0, true, false, false);
+            }
+            check(rejected, "forecast settlement cannot finance sustained extra speed through repeated teleports " + multiplier);
         }
     }
 

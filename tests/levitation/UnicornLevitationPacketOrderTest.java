@@ -13,23 +13,23 @@ public final class UnicornLevitationPacketOrderTest {
         for (Mode mode : new Mode[]{Mode.ASCEND, Mode.HOVER, Mode.SURFACE}) for (int batch : new int[]{1, 2, 3}) {
             var budget = new UnicornLevitationBudget(0, .15, 0, Motion.ZERO);
             Motion motion = Motion.ZERO; double x = 0, y = .15, z = 0;
-            for (int tick = 0; tick < 25; tick++) budget.advance(tick, 0, 0, 0, mode, y, 0, mode == Mode.HOVER);
+            for (int tick = 0; tick < 25; tick++) budget.advance(tick, 0, 0, 0, mode, y, 0);
             for (int tick = 25; tick < 625; tick++) {
                 float yaw = (tick / 80) % 2 == 0 ? 0 : 45;
                 float forward = tick % 120 < 100 ? 1 : 0;
-                motion = step(motion, yaw, forward, 0, mode, y, 0, mode == Mode.HOVER);
+                motion = step(motion, yaw, forward, 0, mode, y, 0);
                 x += motion.x(); y += motion.y(); z += motion.z();
                 if ((tick - 24) % batch == 0) accept(budget, tick, x, y, z, false, mode + " batch " + batch + " tick " + tick);
-                budget.advance(tick, yaw, forward, 0, mode, y - motion.y(), 0, mode == Mode.HOVER);
+                budget.advance(tick, yaw, forward, 0, mode, y - motion.y(), 0);
             }
         }
         for (double multiplier : new double[]{1.2, 2, 5}) {
             var budget = new UnicornLevitationBudget(0, 0, 0, Motion.ZERO);
             Motion motion = Motion.ZERO; double z = 0; boolean rejected = false;
             for (int tick = 0; tick < 1000; tick++) {
-                motion = step(motion, 0, 1, 0, Mode.HOVER, 0, 0, true); z += motion.z() * multiplier;
+                motion = step(motion, 0, 1, 0, Mode.HOVER, 0, 0); z += motion.z() * multiplier;
                 if (!budget.accept(tick, 0, 0, z)) { rejected = true; break; }
-                budget.advance(tick, 0, 1, 0, Mode.HOVER, 0, 0, true);
+                budget.advance(tick, 0, 1, 0, Mode.HOVER, 0, 0);
             }
             check(rejected, "forecast is repaid, never sustainable extra speed " + multiplier);
         }
@@ -43,14 +43,14 @@ public final class UnicornLevitationPacketOrderTest {
         for (int packet = 0; packet < 4; packet++) {
             y += .16; accept(budget, 50, 0, y, 0, false, "four ASCEND packets use finite forecast");
         }
-        budget.advance(50, 0, 0, 0, Mode.HOVER, y, 0, true);
+        budget.advance(50, 0, 0, 0, Mode.HOVER, y, 0);
         y += .08; accept(budget, 51, 0, y, 0, false, "new HOVER frame retains committed upward credit");
-        budget.advance(51, 0, 0, 0, Mode.HOVER, y, 0, true);
+        budget.advance(51, 0, 0, 0, Mode.HOVER, y, 0);
         accept(budget, 52, 0, y, 0, false, "stopped axis does not retain permanent negative debt");
         budget.advance(52, 0, 0, 0, Mode.ASCEND, y, 0);
         y += .08; accept(budget, 53, 0, y, 0, false, "legal upward restart after zero axis");
         for (int tick = 54; tick < 154; tick++) {
-            budget.advance(tick, 0, 0, 0, Mode.HOVER, y, 0, true);
+            budget.advance(tick, 0, 0, 0, Mode.HOVER, y, 0);
             accept(budget, tick, 0, y, 0, false, "zero move remains valid without per-packet reset");
         }
         check(!budget.accept(154, 0, y + 1, 0), "mode change cannot bank unbounded previous forecasts");
@@ -62,10 +62,10 @@ public final class UnicornLevitationPacketOrderTest {
             Mode mode = switch ((tick / 60) % 3) { case 0 -> Mode.ASCEND; case 1 -> Mode.HOVER; default -> Mode.SURFACE; };
             float yaw = tick % 180;
             double surface = y - .15;
-            motion = step(motion, yaw, 1, .5f, mode, y, surface, mode == Mode.HOVER);
+            motion = step(motion, yaw, 1, .5f, mode, y, surface);
             x += motion.x(); y += motion.y(); z += motion.z();
             accept(budget, tick, x, y, z, false, "ASCEND/HOVER/SURFACE continuous movement " + tick);
-            budget.advance(tick, yaw, 1, .5f, mode, y - motion.y(), surface, mode == Mode.HOVER);
+            budget.advance(tick, yaw, 1, .5f, mode, y - motion.y(), surface);
         }
     }
     private static void accept(UnicornLevitationBudget budget, int tick, double x, double y, double z, boolean ground, String label) {
