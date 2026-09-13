@@ -6,6 +6,7 @@ import java.util.UUID;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.input.Input;
@@ -20,6 +21,7 @@ import top.csituka.magicaland.gameplay.client.RemoteToolClient;
 import top.csituka.magicaland.gameplay.client.race.RaceClient;
 import top.csituka.magicaland.gameplay.client.sense.EarthSenseClient;
 import top.csituka.magicaland.gameplay.levitation.UnicornLevitationGround;
+import top.csituka.magicaland.gameplay.levitation.UnicornLevitationDamageState;
 import top.csituka.magicaland.gameplay.levitation.UnicornLevitationMath;
 import top.csituka.magicaland.gameplay.levitation.UnicornLevitationMath.Mode;
 import top.csituka.magicaland.gameplay.levitation.UnicornLevitationMath.Motion;
@@ -27,11 +29,14 @@ import top.csituka.magicaland.gameplay.levitation.UnicornLevitationProtocol;
 
 public final class UnicornLevitationClient {
     private static final UnicornLevitationSession SESSION = new UnicornLevitationSession();
+    private static final UnicornLevitationDamageState DAMAGE = new UnicornLevitationDamageState();
     private static final Map<UUID, Visual> VISUALS = new LinkedHashMap<>();
     private static Registration flightOverride, magicOverride;
     private static ClientWorld world;
     private static PlayerEntity owner;
     private static long tick, lastSent = -100, lastState;
+    private static long confirmedReadyToken = -1, announcedReadyToken = -1;
+    private static long damageCorrectionUntil = -1;
     private static int retry, movedAge = Integer.MIN_VALUE;
     private static boolean initialized, nativeControl;
     private static Mode predicted = Mode.OFF;
@@ -57,6 +62,7 @@ public final class UnicornLevitationClient {
             } catch (RuntimeException ignored) {}
         });
         ClientTickEvents.START_CLIENT_TICK.register(UnicornLevitationClient::tick);
+        HudRenderCallback.EVENT.register(LevitationReadinessCue::render);
     }
     public static boolean available() {
         return RaceClient.canUseUnicornAbility() && ClientPlayNetworking.canSend(UnicornLevitationProtocol.CONTROL);
@@ -68,6 +74,10 @@ public final class UnicornLevitationClient {
     }
     public static boolean armed() { return SESSION.armed(); }
     public static boolean active() { return predicted != Mode.OFF && scope(MinecraftClient.getInstance()); }
+    static boolean flightCueActive() {
+        var player = MinecraftClient.getInstance().player;
+        return active() || player != null && flightVisual(player.getUuid());
+    }
 
     public static void toggle() {
         var client = MinecraftClient.getInstance();
@@ -82,7 +92,6 @@ public final class UnicornLevitationClient {
             client.player.sendAbilitiesUpdate();
         }
         SESSION.begin(true); predicted = Mode.OFF; send(readInput(client));
-        client.player.sendMessage(text("hint"), true);
     }
     public static void stop() {
         if (!SESSION.enabled() || !SESSION.armed()) return;
@@ -92,9 +101,16 @@ public final class UnicornLevitationClient {
         if (SESSION.enabled()) { SESSION.disable(); send(UnicornLevitationInput.NONE); }
         predicted = Mode.OFF; nativeControl = false;
     }
+    public static void pauseForRemote() {
+        SESSION.pauseForRemote(); predicted = Mode.OFF; nativeControl = false;
+        if (SESSION.enabled()) send(UnicornLevitationInput.NONE);
+    }
     public static void clear() {
-        SESSION.clear(); VISUALS.clear(); world = null; owner = null;
+        LevitationReadinessCue.reset();
+        SESSION.clear(); DAMAGE.clear(); VISUALS.clear(); world = null; owner = null;
         retry = 0; nativeControl = false; tick = lastState = 0; lastSent = -100;
+        confirmedReadyToken = announcedReadyToken = -1;
+        damageCorrectionUntil = -1;
         predicted = Mode.OFF; movedAge = Integer.MIN_VALUE;
     }
     private static void closeOverride() {
@@ -106,14 +122,41 @@ public final class UnicornLevitationClient {
         return scope(client, false);
     }
     private static boolean scope(MinecraftClient client, boolean permitNativeFlightExit) {
+        return sessionScope(client) && !bodyPaused(client, permitNativeFlightExit) && !SESSION.controlsSuspended();
+    }
+    private static boolean sessionScope(MinecraftClient client) {
         var player = client.player;
         return player != null && client.world != null && player.getWorld() == client.world && available()
-                && player.isAlive() && !player.isRemoved() && !player.isSpectator()
-                && (permitNativeFlightExit || !player.getAbilities().flying)
-                && !player.hasVehicle() && !player.isSleeping() && !player.isFallFlying() && !player.isUsingRiptide()
-                && !player.isSubmergedInWater() && player.hurtTime == 0
-                && client.getCameraEntity() == player
-                && !RemoteToolClient.active() && !EarthSenseClient.active() && !EarthSenseClient.pending();
+                && player.isAlive() && !player.isRemoved();
+    }
+    private static boolean bodyPaused(MinecraftClient client, boolean permitNativeFlightExit) {
+        var player = client.player;
+        return player == null || RemoteToolClient.active() || client.getCameraEntity() != player
+                || player.hasVehicle() || player.isSleeping() || player.isFallFlying() || player.isUsingRiptide()
+                || player.isSubmergedInWater() || player.isSpectator()
+                || !permitNativeFlightExit && player.getAbilities().flying
+                || EarthSenseClient.active() || EarthSenseClient.pending();
+    }
+    private static void updateBodyPause(MinecraftClient client) {
+        if (bodyPaused(client, false)) SESSION.pauseForRemote();
+        else if (SESSION.jumpSuspended()) {
+            boolean readable = client.currentScreen == null && client.getOverlay() == null
+                    && !client.isPaused() && client.isWindowFocused() && client.getCameraEntity() == client.player;
+            boolean held = readable && RemoteToolClient.held(client.options.jumpKey);
+            SESSION.resumeAfterRemote(readable, held); SESSION.resumeAfterDamage(readable, held);
+        }
+        if (SESSION.controlsSuspended()) { predicted = Mode.OFF; nativeControl = false; }
+    }
+    private static void observeDamage(MinecraftClient client) {
+        var player = client.player;
+        if (player != null && DAMAGE.observe(player.getHealth(), player.hurtTime, tick)
+                && SESSION.enabled()) {
+            interruptForDamage(); send(readInput(client));
+        }
+    }
+    private static void interruptForDamage() {
+        SESSION.interruptForDamage(); predicted = Mode.OFF; nativeControl = false;
+        damageCorrectionUntil = tick + 10;
     }
     private static void tick(MinecraftClient client) {
         if (world != client.world || owner != client.player) {
@@ -122,19 +165,30 @@ public final class UnicornLevitationClient {
         if (client.isPaused()) return;
         tick++;
         VISUALS.entrySet().removeIf(entry -> tick - entry.getValue().tick > 20);
-        if (!scope(client)) { suspend(); return; }
+        if (!sessionScope(client)) { suspend(); return; }
+        observeDamage(client); updateBodyPause(client);
         SESSION.tick();
         if (retry > 0) retry--;
         if (SESSION.expired() && SESSION.enabled()) { suspend(); retry = 20; }
+        announceReady(client);
         if (SESSION.enabled()) {
             var input = readInput(client);
             if (tick - lastSent >= 5 || input.needsUpdate(SESSION.input())) send(input);
         }
     }
+    private static void announceReady(MinecraftClient client) {
+        if (scope(client) && SESSION.allowed() && SESSION.armed() && confirmedReadyToken == SESSION.token()
+                && announcedReadyToken != confirmedReadyToken && client.currentScreen == null
+                && client.getOverlay() == null && client.isWindowFocused() && !client.options.hudHidden) {
+            client.player.sendMessage(text("ready"), true);
+            announcedReadyToken = confirmedReadyToken;
+        }
+    }
     public static void captureInput(Input input) {
         var client = MinecraftClient.getInstance();
         if (client.player == null || client.player.input != input) return;
-        if (!scope(client)) { suspend(); return; }
+        if (!sessionScope(client)) { suspend(); return; }
+        observeDamage(client); updateBodyPause(client);
         preparePlayerInput(client.player);
         if (SESSION.enabled()) {
             var raw = readInput(client);
@@ -144,21 +198,27 @@ public final class UnicornLevitationClient {
     public static boolean preparePlayerInput(PlayerEntity player) {
         var client = MinecraftClient.getInstance();
         if (player != client.player) return false;
+        observeDamage(client);
         nativeControl = scope(client) && SESSION.allowed() && predictMode(player, readInput(client)) != Mode.OFF;
         return nativeControl;
     }
     public static void applyNativeInput(Input input) {
         var client = MinecraftClient.getInstance();
         if (client.player == null || client.player.input != input) return;
-        UnicornLevitationNativeInput.apply(input, readInput(client), suppressesNativeSneak(), controlsNativeInput());
+        UnicornLevitationNativeInput.apply(input, readInput(client), suppressesNativeSneak(), blocksNativeJump());
     }
     public static boolean controlsNativeInput() { return nativeControl && scope(MinecraftClient.getInstance()); }
+    public static boolean blocksNativeJump() { return controlsNativeInput() || blocksResumeJump(); }
+    private static boolean blocksResumeJump() {
+        var client = MinecraftClient.getInstance();
+        return SESSION.jumpSuspended() && sessionScope(client) && !bodyPaused(client, false);
+    }
     public static boolean suppressesNativeSneak() {
         var client = MinecraftClient.getInstance();
         return scope(client) && (nativeControl || SESSION.armed() && readInput(client).space());
     }
     public static boolean blocksNativeFlight() {
-        return scope(MinecraftClient.getInstance()) && (SESSION.armed() || nativeControl || predicted != Mode.OFF);
+        return blocksResumeJump() || scope(MinecraftClient.getInstance()) && (SESSION.armed() || nativeControl || predicted != Mode.OFF);
     }
     public static boolean blocksSprinting() {
         var client = MinecraftClient.getInstance();
@@ -167,11 +227,12 @@ public final class UnicornLevitationClient {
     }
     private static UnicornLevitationInput readInput(MinecraftClient client) {
         if (client.player == null || client.currentScreen != null || client.getOverlay() != null
-                || client.isPaused() || !client.isWindowFocused()) return UnicornLevitationInput.NONE;
+                || client.isPaused() || !client.isWindowFocused() || RemoteToolClient.active()
+                || SESSION.controlsSuspended()) return UnicornLevitationInput.NONE;
         var options = client.options;
-        return new UnicornLevitationInput(options.jumpKey.isPressed(), options.sneakKey.isPressed(),
+        return SESSION.filterInput(new UnicornLevitationInput(options.jumpKey.isPressed(), options.sneakKey.isPressed(),
                 options.forwardKey.isPressed(), options.backKey.isPressed(), options.leftKey.isPressed(),
-                options.rightKey.isPressed(), client.player.getYaw());
+                options.rightKey.isPressed(), client.player.getYaw()));
     }
     private static void send(UnicornLevitationInput input) {
         if (!ClientPlayNetworking.canSend(UnicornLevitationProtocol.CONTROL)) return;
@@ -186,10 +247,13 @@ public final class UnicornLevitationClient {
         if (state.actor().equals(client.player.getUuid())) {
             boolean wasEnabled = SESSION.enabled();
             if (!SESSION.accept(state, dimension(client))) return;
+            confirmedReadyToken = state.allowed() && state.armed() ? SESSION.token() : -1;
             if (!state.allowed()) {
                 SESSION.disable(); predicted = Mode.OFF; nativeControl = false;
                 if (wasEnabled) retry = Math.max(retry, 20);
-            } else if (UnicornLevitationProtocol.MOVEMENT_CORRECTION.equals(state.reason())
+            } else if (UnicornLevitationProtocol.HURT_INTERRUPT.equals(state.reason())) {
+                interruptForDamage(); send(readInput(client));
+            } else if (UnicornLevitationProtocol.MOVEMENT_CORRECTION.equals(state.reason()) && tick > damageCorrectionUntil
                     && SESSION.allowed() && SESSION.armed() && scope(client)) {
                 client.player.setVelocity(state.velocityX(), state.velocityY(), state.velocityZ());
             }
@@ -201,6 +265,7 @@ public final class UnicornLevitationClient {
     public static boolean travel(PlayerEntity player) {
         var client = MinecraftClient.getInstance();
         if (player != client.player) return false;
+        observeDamage(client);
         if (!scope(client) || !SESSION.allowed()) { predicted = Mode.OFF; nativeControl = false; return false; }
         var current = player.getVelocity();
         if (!finite(current)) { suspend(); return false; }

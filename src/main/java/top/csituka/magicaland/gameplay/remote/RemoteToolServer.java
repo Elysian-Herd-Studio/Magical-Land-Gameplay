@@ -86,6 +86,17 @@ public final class RemoteToolServer {
     private static int returnCursor;
     private RemoteToolServer() {}
     public static boolean active(ServerPlayerEntity player) { return ACTIVE.containsKey(player.getUuid()); }
+    static <T> T deliverToBody(ServerPlayerEntity player, java.util.function.Supplier<T> delivery) {
+        RemoteSession session=ACTIVE.get(player.getUuid());
+        boolean unchanged=session!=null && session.player==player && player.getInventory().selectedSlot==session.sourceSlot
+                && ItemStack.areEqual(player.getInventory().main.get(session.sourceSlot),session.bodyStack);
+        try { return delivery.get(); }
+        finally {
+            // 本体正常收货不等于玩家在远控期间切换了手持物。
+            if (unchanged && ACTIVE.get(player.getUuid())==session && player.getInventory().selectedSlot==session.sourceSlot)
+                session.bodyStack=player.getInventory().main.get(session.sourceSlot).copy();
+        }
+    }
     public static boolean owns(RemoteToolEntity tool) {
         RemoteSession session=ACTIVE.get(tool.owner());
         ReturnFlight flight=RETURNS.get(tool.owner());
@@ -226,8 +237,7 @@ public final class RemoteToolServer {
         if (RETURNS.containsKey(player.getUuid()) || PENDING.containsKey(player.getUuid())) {
             reject(player,request,"return_flying"); return;
         }
-        if (active(player) || top.csituka.magicaland.gameplay.levitation.UnicornLevitationServer.active(player)
-                || ACTIVE.size()+RETURNS.size()>=64) { reject(player,request,"busy"); return; }
+        if (active(player) || ACTIVE.size()+RETURNS.size()>=64) { reject(player,request,"busy"); return; }
         int now=player.getServer().getTicks(); Integer previous=STARTS.put(player.getUuid(),now);
         if (previous!=null && now-previous<10) { reject(player,request,"busy"); return; }
         if (!top.csituka.magicaland.gameplay.race.RaceServer.isUnicorn(player)) {
@@ -235,6 +245,7 @@ public final class RemoteToolServer {
         }
         if (!player.getCommandTags().contains(GRANT)) { reject(player,request,"grant"); return; }
         if (!eligible(player)) { reject(player,request,"stance"); return; }
+        if (TelekinesisToken.isToken(player.getMainHandStack())) { reject(player,request,"deployed"); return; }
         var cargo=RemoteCargoState.get(player.getServer()).inventory(player.getUuid());
         if (!cargo.canLoad(player.getMainHandStack())) { reject(player,request,"occupied"); return; }
         RemoteToolEntity tool=new RemoteToolEntity(TYPE,player.getWorld());
@@ -243,7 +254,7 @@ public final class RemoteToolServer {
         if (!player.getWorld().isSpaceEmpty(tool) || !clearRay(player,player.getEyePos(),tool.getEyePos())) {
             reject(player,request,"blocked"); return;
         }
-        top.csituka.magicaland.gameplay.levitation.UnicornLevitationServer.stop(player);
+        top.csituka.magicaland.gameplay.levitation.UnicornLevitationServer.pauseForRemote(player);
         RemoteSession s=new RemoteSession(player,tool,cargo,request,++nextSession);
         tool.setup(player.getUuid(),ItemStack.EMPTY); ACTIVE.put(player.getUuid(),s);
         if (!player.getServerWorld().spawnEntity(tool)) {
@@ -430,7 +441,7 @@ public final class RemoteToolServer {
         if (now%5==0) tool.inventoryView(s.cargo);
         return step.expandedNodes();
     }
-    private static void clearMining(RemoteSession s) {
+    static void clearMining(RemoteSession s) {
         if (s.mining!=null) s.tool.getWorld().setBlockBreakingInfo(s.tool.getId(),s.mining,-1);
         s.mining=null; s.miningState=null; s.progress=0;
         if (s.tool.action()==RemoteAction.MINING) s.tool.startAction(RemoteAction.NONE);
@@ -440,8 +451,36 @@ public final class RemoteToolServer {
     }
     private static boolean canAttack(ServerPlayerEntity player,RemoteToolEntity tool,Entity target,Vec3d point) {
         return target!=player && RemoteTargeting.attackable(target) && target.getWorld()==tool.getWorld()
+                && (!tool.autonomous() || TelekinesisServer.allowsAttack(player,tool,target))
                 && (!(target instanceof PlayerEntity other) || player.shouldDamagePlayer(other))
                 && point!=null && clearRay(tool,tool.getEyePos(),point);
+    }
+
+    static void automaticAttack(RemoteSession s,net.minecraft.entity.LivingEntity target,int now) {
+        if (!TelekinesisServer.canWork(s.tool) || !canAttack(s.player,s.tool,target)
+                || s.tool.getEyePos().squaredDistanceTo(target.getBoundingBox().getCenter())>2.8*2.8) return;
+        s.bodyStack=s.player.getInventory().main.get(s.player.getInventory().selectedSlot).copy();
+        try (var context=RemoteActionContext.open(s)) {
+            if (context.attackCooldown(0)<1) return;
+            var hit=new net.minecraft.util.hit.EntityHitResult(target);
+            if (AttackEntityCallback.EVENT.invoker().interact(s.player,s.player.getWorld(),Hand.MAIN_HAND,target,hit)!=ActionResult.PASS
+                    || !TelekinesisServer.canWork(s.tool) || !canAttack(s.player,s.tool,target)) return;
+            s.tool.startAction(RemoteAction.SWING); s.lastSwingTick=now;
+            context.resetHit(); s.player.attack(target); s.player.resetLastAttackedTicks();
+            if (context.hit() && s.tool.action()!=RemoteAction.TOOL_BREAK) s.tool.startAction(RemoteAction.HIT);
+            s.tool.setAttackCooldown(context.attackCooldown(0));
+        } finally { s.cargo.markDirty(); }
+    }
+
+    static boolean automaticMine(RemoteSession s,BlockHitResult hit,int now) {
+        if (!TelekinesisServer.allowsGather(s.tool,hit.getBlockPos())) return false;
+        var actual=TelekinesisSight.blockHit(s.tool,s.tool.getEyePos(),hit.getBlockPos(),2.6);
+        if (actual==null) { clearMining(s); return false; }
+        var world=s.player.getServerWorld(); var before=world.getBlockState(hit.getBlockPos());
+        s.bodyStack=s.player.getInventory().main.get(s.player.getInventory().selectedSlot).copy();
+        try (var context=RemoteActionContext.open(s)) { mine(s,actual,now); }
+        finally { s.cargo.markDirty(); }
+        return !world.getBlockState(hit.getBlockPos()).equals(before);
     }
     private static void drop(RemoteSession s) {
         var request=s.pendingDrop;
@@ -554,6 +593,7 @@ public final class RemoteToolServer {
         if (!pos.equals(s.mining) || state!=s.miningState) {
             clearMining(s);
             if (AttackBlockCallback.EVENT.invoker().interact(p,world,Hand.MAIN_HAND,pos,hit.getSide())!=ActionResult.PASS) return;
+            if (tool.autonomous() && (!TelekinesisServer.allowsGather(tool,pos) || world.getBlockState(pos)!=state)) return;
             s.mining=pos; s.miningState=state; tool.startAction(RemoteAction.MINING);
         }
         s.progress+=p.isCreative()?1:state.calcBlockBreakingDelta(p,world,pos);

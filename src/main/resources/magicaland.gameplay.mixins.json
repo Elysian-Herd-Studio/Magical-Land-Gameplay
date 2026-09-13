@@ -8,6 +8,12 @@
     "CarrotFinishUsingMixin",
     "HorseGoalSelectorAccessor",
     "RemoteBodyActionMixin",
+    "TelekinesisSlotMixin",
+    "TelekinesisScreenHandlerMixin",
+    "TelekinesisInventoryMixin",
+    "TelekinesisPlayerMixin",
+    "TelekinesisNetworkMixin",
+    "TelekinesisDamageMixin",
     "RemoteItemPickupOwnerAccessor",
     "RemoteWorldFeedbackMixin",
     "RemoteAttackEffectsMixin",
@@ -19,7 +25,10 @@
     "RemoteTemptationsSensorMixin",
     "RemoteTemptTaskMixin",
     "UnicornLevitationNetworkMixin",
-    "UnicornLevitationFallMixin"
+    "UnicornLevitationDamageMixin",
+    "UnicornLevitationFallMixin",
+    "PegasusFlightNetworkMixin",
+    "PegasusFlightPlayerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -54,14 +54,32 @@ public final class RemoteCargoInventory extends SimpleInventory {
         return removed;
     }
     @Override public ItemStack addStack(ItemStack source) {
+        return addGoodsStack(source,-1);
+    }
+    public ItemStack addGoodsStack(ItemStack source,int retainedSlot) {
+        if (TelekinesisToken.isToken(source)) return source.copy();
         ItemStack remainder=source.copy();
         for (boolean empty:new boolean[]{false,true}) {
             for (int i=0;i<unlocked && !remainder.isEmpty();i++) {
+                if (i==retainedSlot) continue;
                 Slot slot=new Slot(this,i,0,0);
                 if (slot.getStack().isEmpty()==empty) remainder=slot.insertStack(remainder);
             }
         }
         return remainder;
+    }
+    public boolean unloadTo(Inventory target,int slots,int retainedSlot) {
+        boolean empty=true;
+        for (int i=0;i<MAX_SLOTS;i++) if (i!=retainedSlot) {
+            setStack(i,returnStack(getStack(i),target,slots,-1));
+            empty&=getStack(i).isEmpty();
+        }
+        for (int i=0;i<recovery.size();i++) recovery.set(i,returnStack(recovery.get(i),target,slots,-1));
+        recovery.removeIf(ItemStack::isEmpty); markDirty();
+        return empty && recovery.isEmpty();
+    }
+    public int dropGoodsRemainder(int retainedSlot,Predicate<ItemStack> spawn) {
+        return dropRemainder(retainedSlot,spawn);
     }
     public boolean canLoad(ItemStack source) {
         if (source.isEmpty()) return true;
@@ -74,7 +92,7 @@ public final class RemoteCargoInventory extends SimpleInventory {
     }
     public int loadFrom(Inventory source,int sourceSlot) {
         ItemStack original=source.getStack(sourceSlot);
-        if (original.isEmpty()) return 0;
+        if (original.isEmpty() || TelekinesisToken.isToken(original)) return 0;
         for (int offset=0;offset<unlocked;offset++) {
             int index=(selected+offset)%unlocked;
             ItemStack offered=original.copy();
@@ -116,8 +134,12 @@ public final class RemoteCargoInventory extends SimpleInventory {
         return dropRemainder(stack -> net.minecraft.enchantment.EnchantmentHelper.hasVanishingCurse(stack) || spawn.test(stack));
     }
     public int dropRemainder(Predicate<ItemStack> spawn) {
+        return dropRemainder(-1,spawn);
+    }
+    private int dropRemainder(int retainedSlot,Predicate<ItemStack> spawn) {
         int attempts=0,dropped=0;
         for (int slot=0;slot<MAX_SLOTS && attempts<SETTLEMENT_SPAWN_LIMIT;slot++) {
+            if (slot==retainedSlot) continue;
             while (!getStack(slot).isEmpty() && attempts<SETTLEMENT_SPAWN_LIMIT) {
                 ItemStack original=getStack(slot),offered=original.copy();
                 int count=Math.min(original.getCount(),Math.min(CAPACITY,original.getMaxCount()));

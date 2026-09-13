@@ -1,0 +1,4 @@
+{
+  "replace": false,
+  "values": ["#minecraft:diamond_ores", "#minecraft:emerald_ores", "minecraft:ancient_debris"]
+}

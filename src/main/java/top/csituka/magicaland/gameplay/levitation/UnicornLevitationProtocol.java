@@ -6,6 +6,7 @@ import net.minecraft.util.Identifier;
 
 public final class UnicornLevitationProtocol {
     public static final String MOVEMENT_CORRECTION = "movement_correction";
+    public static final String HURT_INTERRUPT = "hurt_interrupt";
     public static final Identifier CONTROL = new Identifier("magicaland_gameplay", "unicorn_levitation_control_v3");
     public static final Identifier STATE = new Identifier("magicaland_gameplay", "unicorn_levitation_state_v3");
     // sneak 表示定高；v3 增加下坠回托阶段，关闭技能同时关闭被动保护。

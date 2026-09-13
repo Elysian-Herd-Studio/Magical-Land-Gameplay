@@ -96,7 +96,7 @@ public final class RemoteToolHud {
         context.drawTextWithShadow(client.textRenderer,Text.translatable("text.magicaland_gameplay.remote.marker"),
                 x-4-client.textRenderer.getWidth(Text.translatable("text.magicaland_gameplay.remote.marker")),y+7,color);
         if (RemoteToolClient.waiting()) {
-            context.drawCenteredTextWithShadow(client.textRenderer,Text.translatable("text.magicaland_gameplay.remote.wait",RemoteToolClient.returnKey()),width/2,y-23,0xcceeff);
+            context.drawCenteredTextWithShadow(client.textRenderer,Text.translatable("text.magicaland_gameplay.remote.wait"),width/2,y-23,0xcceeff);
             return;
         }
         var selected=RemoteToolClient.stack(RemoteToolClient.selectedSlot());
@@ -104,12 +104,8 @@ public final class RemoteToolHud {
         String hint=RemoteToolClient.returning() ? "text.magicaland_gameplay.remote.returning"
                 : visualOcclusion>=.999f ? (SpiritualEchoRenderer.unavailable()
                     ? "text.magicaland_gameplay.remote.echo_unavailable" : "text.magicaland_gameplay.remote.blind")
-                : "text.magicaland_gameplay.remote.controls";
-        Text hintText=hint.endsWith(".controls")
-                ? Text.translatable(hint,RemoteToolClient.dropKey(),RemoteToolClient.returnKey())
-                : Text.translatable(hint,RemoteToolClient.returnKey());
-        if (hint.endsWith(".controls") && client.textRenderer.getWidth(hintText)>width-16)
-            hintText=Text.translatable("text.magicaland_gameplay.remote.controls_short",RemoteToolClient.dropKey(),RemoteToolClient.returnKey());
+                : null;
+        Text hintText=hint == null ? Text.empty() : Text.translatable(hint);
         int hintY=y-37;
         for (var line : client.textRenderer.wrapLines(hintText,width-16)) {
             context.drawCenteredTextWithShadow(client.textRenderer,line,width/2,hintY,0xcceeff);

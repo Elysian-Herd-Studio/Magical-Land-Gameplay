@@ -32,7 +32,7 @@ public abstract class UnicornLevitationPlayerInputMixin extends AbstractClientPl
             input.sneaking = false;
             inSneakingPose = false;
         }
-        if (UnicornLevitationClient.controlsNativeInput()) input.jumping = false;
+        if (UnicornLevitationClient.blocksNativeJump()) input.jumping = false;
         if (UnicornLevitationClient.blocksNativeFlight()) abilityResyncCountdown = 0;
     }
 
@@ -45,14 +45,14 @@ public abstract class UnicornLevitationPlayerInputMixin extends AbstractClientPl
     @Redirect(method = "tickMovement()V", at = @At(value = "FIELD", opcode = Opcodes.GETFIELD,
             target = "Lnet/minecraft/client/input/Input;jumping:Z"))
     private boolean magicaland$controlledJump(Input input) {
-        return input.jumping && !UnicornLevitationClient.controlsNativeInput();
+        return input.jumping && !UnicornLevitationClient.blocksNativeJump();
     }
 
     @Inject(method = "tickMovement()V", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/network/AbstractClientPlayerEntity;tickMovement()V"))
     private void magicaland$clearAutoJumpBeforeTravel(CallbackInfo ci) {
         if (UnicornLevitationClient.suppressesNativeSneak()) input.sneaking = false;
-        if (UnicornLevitationClient.controlsNativeInput()) input.jumping = false;
+        if (UnicornLevitationClient.blocksNativeJump()) input.jumping = false;
         if (UnicornLevitationClient.blocksSprinting()) setSprinting(false);
     }
 

@@ -11,9 +11,12 @@ public final class MagicalLandGameplay implements ModInitializer {
     public void onInitialize() {
         if (FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT) GameplayClientConfig.load();
         CarrotMisunderstanding.register();
+        top.csituka.magicaland.gameplay.remote.TelekinesisToken.register();
         top.csituka.magicaland.gameplay.remote.RemoteToolServer.register();
+        top.csituka.magicaland.gameplay.remote.TelekinesisServer.register();
         top.csituka.magicaland.gameplay.race.RaceServer.register();
         top.csituka.magicaland.gameplay.sense.EarthSenseServer.register();
         top.csituka.magicaland.gameplay.levitation.UnicornLevitationServer.register();
+        top.csituka.magicaland.gameplay.pegasus.PegasusFlightServer.register();
     }
 }

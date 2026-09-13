@@ -1,0 +1,18 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:vine",
+    "minecraft:glow_lichen",
+    "minecraft:grass",
+    "minecraft:tall_grass",
+    "minecraft:fern",
+    "minecraft:large_fern",
+    "minecraft:dead_bush",
+    "minecraft:cave_vines",
+    "minecraft:cave_vines_plant",
+    "minecraft:twisting_vines",
+    "minecraft:twisting_vines_plant",
+    "minecraft:weeping_vines",
+    "minecraft:weeping_vines_plant"
+  ]
+}

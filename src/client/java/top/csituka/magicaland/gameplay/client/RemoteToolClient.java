@@ -2,6 +2,7 @@ package top.csituka.magicaland.gameplay.client;
 
 import top.csituka.magicaland.gameplay.client.sense.EarthSenseClient;
 import top.csituka.magicaland.gameplay.client.levitation.UnicornLevitationClient;
+import top.csituka.magicaland.gameplay.client.telekinesis.TelekinesisClient;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -65,13 +66,12 @@ public final class RemoteToolClient implements ClientModInitializer {
     }
     public static int capacity() { return cargo.length; }
     public static int selectedSlot() { return selectedSlot; }
+    public static Text activationKey() { return activate.getBoundKeyLocalizedText(); }
     public static ItemStack stack(int slot) { return slot >= 0 && slot < cargo.length ? cargo[slot] : ItemStack.EMPTY; }
     public static RemoteToolEntity camera() { return camera; }
     public static boolean ownsCamera(RemoteToolEntity tool) { return camera == tool && active(); }
     public static ItemStack visualStack(RemoteToolEntity tool) { return ownsCamera(tool) && !tool.returning() ? stack(selectedSlot) : tool.stack(); }
     public static int visualSlot(RemoteToolEntity tool) { return ownsCamera(tool) && !tool.returning() ? selectedSlot : tool.selectedSlot(); }
-    public static Text returnKey() { return activate.getBoundKeyLocalizedText(); }
-    public static Text dropKey() { return MinecraftClient.getInstance().options.dropKey.getBoundKeyLocalizedText(); }
     public static float occlusion() { return returned ? 0 : camera == null ? stateOcclusion : camera.occlusion(); }
     public static double seconds() { return System.nanoTime() / 1_000_000_000.0; }
 
@@ -83,15 +83,19 @@ public final class RemoteToolClient implements ClientModInitializer {
     }
 
     @Override public void onInitializeClient() {
-        ApiVersion.requireCompatible(1,5);
+        ApiVersion.requireCompatible(1,6);
         RaceClient.init();
         top.csituka.magicaland.gameplay.client.sense.EarthSenseClient.init();
         UnicornLevitationClient.init();
+        top.csituka.magicaland.gameplay.client.telekinesis.TelekinesisClient.init();
+        top.csituka.magicaland.gameplay.client.pegasus.PegasusFlightClient.init();
+        top.csituka.magicaland.gameplay.client.pegasus.PegasusFlightEffects.init();
         wheel = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.wheel", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_R, "category.magicaland_gameplay"));
         activate = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.magicaland_gameplay.activate", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.magicaland_gameplay"));
         EntityRendererRegistry.register(RemoteToolServer.TYPE, RemoteToolRenderer::new);
         RemoteBodyRenderer.register();
         RemoteToolHud.init();
+        RemoteMagicAudio.init();
         ClientPlayConnectionEvents.JOIN.register((handler,sender,client) -> {
             reset(client); clearVisuals(); closeAppearanceOverride();
             gazeOverride = AppearanceOverrides.registerGaze(APPEARANCE_OWNER,0,RemoteToolClient::gazeTarget);
@@ -159,6 +163,7 @@ public final class RemoteToolClient implements ClientModInitializer {
         if (client.world == null || client.player == null) return false;
         for (Entity entity : client.world.getEntities()) {
             if (entity instanceof RemoteToolEntity tool && !tool.isRemoved() && client.player.getUuid().equals(tool.owner())
+                    && !tool.autonomous()
                     && (tool.returning() || RELEASED.contains(tool.getUuid()))) return true;
         }
         return false;
@@ -184,7 +189,7 @@ public final class RemoteToolClient implements ClientModInitializer {
         if (!ClientPlayNetworking.canSend(RemoteToolServer.CONTROL)) {
             client.player.sendMessage(Text.translatable("text.magicaland_gameplay.remote.server"), true); return;
         }
-        UnicornLevitationClient.suspend();
+        UnicornLevitationClient.pauseForRemote();
         INPUT.suspend(); attackQueued=useQueued=false;
         waiting=40; returned=false; selectionAck=-1; lastKeys=0;
         selectedSlot=0; cargo=new ItemStack[] {ItemStack.EMPTY};
@@ -193,12 +198,14 @@ public final class RemoteToolClient implements ClientModInitializer {
     }
 
     private static void tick(MinecraftClient client) {
-        if (client.world == null || client.player == null) { reset(client); clearVisuals(); return; }
+        if (client.world == null || client.player == null) { TelekinesisClient.cancelInput(); reset(client); clearVisuals(); return; }
         TOOLS.clear();
         var present = new HashSet<UUID>();
         var controllingOwners = new HashSet<UUID>();
         for (Entity entity : client.world.getEntities()) if (entity instanceof RemoteToolEntity tool && !tool.isRemoved() && tool.owner()!=null) {
-            TOOLS.put(tool.owner(),tool); present.add(tool.getUuid());
+            present.add(tool.getUuid());
+            if (tool.autonomous()) continue;
+            TOOLS.put(tool.owner(),tool);
             if (tool.returning() || RELEASED.contains(tool.getUuid())) continue;
             PlayerEntity player = client.world.getPlayerByUuid(tool.owner());
             if (player == null) continue;
@@ -216,14 +223,17 @@ public final class RemoteToolClient implements ClientModInitializer {
         int heldActions=inputAvailable ? (held(options.attackKey)?RemoteInputGate.ATTACK:0)
                 |(held(options.useKey)?RemoteInputGate.USE:0)|(held(options.dropKey)?RemoteInputGate.DROP:0) : 0;
         INPUT.tick(inputAvailable,heldActions);
-        while (wheel.wasPressed()) if (client.currentScreen == null && client.isWindowFocused() && !active()) {
-            EarthSenseClient.stop();
+        while (wheel.wasPressed()) if (client.currentScreen == null && client.isWindowFocused()) {
+            suspendInput();
             client.setScreen(new AbilityWheelScreen());
         }
-        while (activate.wasPressed()) if (client.currentScreen == null && client.isWindowFocused()
-                && (!active() || INPUT.accepting())) {
-            AbilityClient.activate(client, wheel.getBoundKeyLocalizedText());
+        boolean telekinesisPressed = false;
+        while (activate.wasPressed()) {
+            if (AbilityClient.selected() == 3) telekinesisPressed = true;
+            else if (client.currentScreen == null && client.isWindowFocused() && (!active() || INPUT.accepting()))
+                AbilityClient.activate(client, wheel.getBoundKeyLocalizedText());
         }
+        TelekinesisClient.activationInput(telekinesisPressed, held(activate));
         if (!active()) return;
         if (!client.player.isAlive()) {
             sendStop(SESSION.request(),SESSION.session(),SESSION.entity()); reset(client); return;
@@ -270,6 +280,7 @@ public final class RemoteToolClient implements ClientModInitializer {
     }
 
     public static void suspendInput() {
+        TelekinesisClient.cancelInput();
         INPUT.suspend(); attackQueued=useQueued=false; scrollRemainder=0;
         var client=MinecraftClient.getInstance();
         if (controlling() && client.player!=null && client.player.isAlive() && camera.getWorld()==client.world

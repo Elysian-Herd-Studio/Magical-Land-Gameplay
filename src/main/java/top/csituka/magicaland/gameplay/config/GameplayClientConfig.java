@@ -18,6 +18,10 @@ public final class GameplayClientConfig {
     private static final String SENSE_FILTER = "earthSenseFilterStrength";
     private static final String SENSE_BLUR = "earthSenseBlurStrength";
     private static final String SENSE_AUDIO = "earthSenseAudioStrength";
+    private static final String FLIGHT_SHAKE = "flightShakeStrength";
+    private static final String FLIGHT_WIND = "flightWindVolume";
+    private static final String FLIGHT_VIEW = "automaticFlightThirdPerson";
+    private static final String FLIGHT_AEROBATICS = "flightAerobatics";
     private static JsonObject values;
 
     private GameplayClientConfig() {}
@@ -50,13 +54,13 @@ public final class GameplayClientConfig {
     }
 
     public static boolean setAutomaticAbilityThirdPerson(boolean enabled) {
-        if (values == null) load();
-        JsonObject next = values.deepCopy();
-        next.addProperty(VIEW, enabled);
-        if (!store(next)) return false;
-        values = next;
-        return true;
+        return setFlag(VIEW, enabled);
     }
+
+    public static boolean automaticFlightThirdPerson() { return flag(FLIGHT_VIEW, true); }
+    public static boolean flightAerobatics() { return flag(FLIGHT_AEROBATICS, false); }
+    public static boolean setAutomaticFlightThirdPerson(boolean enabled) { return setFlag(FLIGHT_VIEW, enabled); }
+    public static boolean setFlightAerobatics(boolean enabled) { return setFlag(FLIGHT_AEROBATICS, enabled); }
 
     public static float earthSenseFilterStrength() {
         return strength(SENSE_FILTER, .8f);
@@ -64,6 +68,10 @@ public final class GameplayClientConfig {
 
     public static float earthSenseBlurStrength() { return strength(SENSE_BLUR, .35f); }
     public static float earthSenseAudioStrength() { return strength(SENSE_AUDIO, .6f); }
+    public static float flightShakeStrength() { return strength(FLIGHT_SHAKE, 1); }
+    public static float flightWindVolume() { return strength(FLIGHT_WIND, .6f); }
+    public static boolean setFlightShakeStrength(float value) { return setStrength(FLIGHT_SHAKE, value); }
+    public static boolean setFlightWindVolume(float value) { return setStrength(FLIGHT_WIND, value); }
     public static boolean setEarthSenseBlurStrength(float value) { return setStrength(SENSE_BLUR, value); }
     public static boolean setEarthSenseAudioStrength(float value) { return setStrength(SENSE_AUDIO, value); }
 
@@ -73,6 +81,22 @@ public final class GameplayClientConfig {
         if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) return fallback;
         float strength = value.getAsFloat();
         return Float.isFinite(strength) ? Math.max(0, Math.min(1, strength)) : fallback;
+    }
+
+    private static boolean flag(String key, boolean fallback) {
+        if (values == null) load();
+        var value = values.get(key);
+        return value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isBoolean()
+                ? value.getAsBoolean() : fallback;
+    }
+
+    private static boolean setFlag(String key, boolean enabled) {
+        if (values == null) load();
+        JsonObject next = values.deepCopy();
+        next.addProperty(key, enabled);
+        if (!store(next)) return false;
+        values = next;
+        return true;
     }
 
     public static boolean setEarthSenseFilterStrength(float strength) {

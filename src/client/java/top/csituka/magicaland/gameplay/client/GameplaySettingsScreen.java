@@ -31,14 +31,17 @@ public final class GameplaySettingsScreen extends Screen {
         addDrawableChild(view);
         race = addDrawableChild(ButtonWidget.builder(RaceClient.text("title"), button -> {
             if (client != null) client.setScreen(new RaceSelectionScreen(this));
-        }).dimensions((width - buttonWidth) / 2, 132, buttonWidth, 20).build());
+        }).dimensions((width - buttonWidth) / 2, 116, buttonWidth, 20).build());
         rules = addDrawableChild(ButtonWidget.builder(RaceClient.text("rules.title"), button -> {
             if (client != null) client.setScreen(new RaceRulesScreen(this));
-        }).dimensions((width - buttonWidth) / 2, 156, buttonWidth, 20).build());
+        }).dimensions((width - buttonWidth) / 2, 140, buttonWidth, 20).build());
         var filter = addDrawableChild(ButtonWidget.builder(Text.translatable("text.magicaland_gameplay.sense.settings"), button -> {
             if (client != null) client.setScreen(new EarthSenseSettingsScreen(this));
-        }).dimensions((width - buttonWidth) / 2, 180, buttonWidth, 20).build());
+        }).dimensions((width - buttonWidth) / 2, 164, buttonWidth, 20).build());
         filter.setTooltip(Tooltip.of(Text.translatable("text.magicaland_gameplay.sense.settings.hint")));
+        addDrawableChild(ButtonWidget.builder(Text.translatable("text.magicaland_gameplay.flight.settings"), button -> {
+            if (client != null) client.setScreen(new PegasusFlightSettingsScreen(this));
+        }).dimensions((width - buttonWidth) / 2, 188, buttonWidth, 20).build());
         updateRaceButtons();
         addDrawableChild(ButtonWidget.builder(Text.translatable("gui.done"), button -> close())
                 .dimensions((width - Math.min(200, buttonWidth)) / 2, height - 28, Math.min(200, buttonWidth), 20).build());

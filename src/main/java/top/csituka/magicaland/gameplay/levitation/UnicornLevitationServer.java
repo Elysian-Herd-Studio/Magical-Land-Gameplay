@@ -61,13 +61,30 @@ public final class UnicornLevitationServer {
                 && session.input.armed();
     }
     public static void stop(ServerPlayerEntity player) { close(player, "manual"); }
+    public static void damaged(ServerPlayerEntity player) {
+        var session = SESSIONS.get(player.getUuid());
+        if (session == null || session.player != player || !session.rules.open() || !player.isAlive()) return;
+        long tick = now(player);
+        session.damage.observe(player.getHealth(), player.hurtTime, tick);
+        interruptForDamage(session, tick);
+    }
+    public static void pauseForRemote(ServerPlayerEntity player) {
+        var session = SESSIONS.get(player.getUuid());
+        if (session == null || session.player != player || !session.rules.open()) return;
+        session.remotePaused = true;
+        pausePhysics(session, now(player));
+        send(session, true, "");
+    }
     public static boolean physicsActive(ServerPlayerEntity player) {
         var session = SESSIONS.get(player.getUuid());
         return session != null && session.player == player && session.rules.open() && session.input.armed() && session.mode != Mode.OFF
                 && !session.rules.expired(now(player)) && session.dimension.equals(dimension(player))
-                && invalid(player) == null && player.hurtTime == 0;
+                && !session.remotePaused && !bodyPaused(player) && !session.damage.settling(now(player))
+                && invalid(player) == null;
     }
     public static boolean allowMove(ServerPlayerEntity player, PlayerMoveC2SPacket packet) {
+        var existing = SESSIONS.get(player.getUuid());
+        if (existing != null && existing.player == player && existing.rules.open()) observeDamage(existing, now(player));
         var pending = PENDING.remove(player.getUuid());
         if (pending != null && pending.player == player && connected(player)) receive(player, pending.control, now(player));
         if (!physicsActive(player)) return true;
@@ -126,7 +143,6 @@ public final class UnicornLevitationServer {
         if (!input.space()) session.rules.release();
         if (!input.enabled()) { close(player, "manual"); return; }
         String denial = invalid(player);
-        if (denial == null && player.hurtTime > 0) denial = "hurt";
         if (denial == null && !wasOpen && SESSIONS.values().stream().filter(s -> s != SESSIONS.get(player.getUuid()) && s.rules.open()).count()
                 >= UnicornLevitationRules.MAX_SESSIONS) denial = "busy";
         if (denial != null) { close(player, denial); return; }
@@ -134,8 +150,15 @@ public final class UnicornLevitationServer {
             session.movementGuard.reset();
             session.dimension = dimension(player); session.position = player.getPos(); session.observedTick = tick;
             session.motion = motion(player.getVelocity()); session.mode = Mode.OFF; session.budget = null;
-            session.health = player.getHealth(); session.absorption = player.getAbsorptionAmount();
+            session.damage.clear();
+            session.damage.observe(player.getHealth(), player.hurtTime, tick);
+            session.damageRelease = false;
         }
+        observeDamage(session, tick);
+        if (!input.space()) session.damageRelease = false;
+        if (bodyPaused(player)) session.remotePaused = true;
+        else if (!input.space()) session.remotePaused = false;
+        if (session.remotePaused) pausePhysics(session, tick);
         // Releasing space is acknowledged before any further charging decision.
         if (!input.armed()) { session.mode = Mode.OFF; session.budget = null; }
         if (!input.space() && (session.mode == Mode.ASCEND || session.mode == Mode.HOVER || session.mode == Mode.RECOVER)) {
@@ -151,17 +174,25 @@ public final class UnicornLevitationServer {
             String denial = invalid(player);
             if (denial == null && !session.dimension.equals(dimension(player))) denial = "dimension";
             if (denial == null && session.rules.expired(tick)) denial = "timeout";
-            if (denial == null && (player.hurtTime > 0 || player.getHealth() < session.health || player.getAbsorptionAmount() < session.absorption)) denial = "hurt";
             if (denial != null) { close(player, denial); return; }
+            observeDamage(session, tick);
+            if (bodyPaused(player)) session.remotePaused = true;
+            if (session.remotePaused) {
+                pausePhysics(session, tick);
+                if (tick % 5 == 0) send(session, true, "");
+                return;
+            }
             long elapsed = tick - session.observedTick;
             if (elapsed > 0) {
                 Vec3d measured = player.getPos().subtract(session.position).multiply(1.0 / elapsed);
                 session.motion = motion(measured); session.position = player.getPos(); session.observedTick = tick;
             }
             var previous = session.mode;
+            if (session.damage.settling(tick)) session.budget = null;
             var controlMotion = session.budget == null ? session.motion : session.budget.expected();
             var support = UnicornLevitationGround.find(player.getWorld(), player, controlMotion);
-            boolean held = session.rules.ready(session.input.armed(), session.input.space(), player.isOnGround() || session.spaceGrounded);
+            boolean held = session.rules.ready(session.input.armed(), session.input.space() && !session.damageRelease,
+                    player.isOnGround() || session.spaceGrounded);
             session.spaceGrounded = false;
             session.mode = UnicornLevitationMath.chooseMode(session.input.armed(), held, session.input.sneak(), player.isOnGround(), previous, controlMotion.y(),
                     support == null ? Double.NaN : support.distance(), support != null && support.kind() != UnicornLevitationGround.Kind.SOLID, player.fallDistance);
@@ -175,7 +206,6 @@ public final class UnicornLevitationServer {
                 session.budget.advance(tick, session.input.yaw(), forward, sideways, session.mode,
                         player.getY(), support == null ? Double.NaN : support.y());
             }
-            session.health = player.getHealth(); session.absorption = player.getAbsorptionAmount();
             session.grounded = player.isOnGround();
             if (previous != session.mode || tick % 5 == 0) send(session, true, "");
         }
@@ -183,12 +213,31 @@ public final class UnicornLevitationServer {
     private static boolean connected(ServerPlayerEntity player) {
         return player.getServer() != null && player.getServer().getPlayerManager().getPlayer(player.getUuid()) == player;
     }
+    private static void observeDamage(Session session, long tick) {
+        var player = session.player;
+        if (!session.damage.observe(player.getHealth(), player.hurtTime, tick)) return;
+        interruptForDamage(session, tick);
+    }
+    private static void interruptForDamage(Session session, long tick) {
+        session.damage.interrupted(tick);
+        session.damageRelease = true;
+        pausePhysics(session, tick);
+        send(session, true, UnicornLevitationProtocol.HURT_INTERRUPT);
+    }
+    private static boolean bodyPaused(ServerPlayerEntity player) {
+        return RemoteToolServer.active(player) || player.hasVehicle() || player.isSleeping() || player.isFallFlying()
+                || player.isUsingRiptide() || player.isSubmergedInWater() || player.getAbilities().flying || player.isSpectator();
+    }
+    private static void pausePhysics(Session session, long tick) {
+        var player = session.player;
+        session.rules.release(); session.mode = Mode.OFF; session.budget = null;
+        session.spaceGrounded = false; session.grounded = player.isOnGround();
+        session.position = player.getPos(); session.observedTick = tick;
+        session.motion = motion(player.getVelocity()); session.movementGuard.reset();
+    }
     private static String invalid(ServerPlayerEntity player) {
-        if (!connected(player) || !player.isAlive() || player.isRemoved() || player.isSpectator()) return "invalid";
+        if (!connected(player) || !player.isAlive() || player.isRemoved()) return "invalid";
         if (!RaceServer.isUnicorn(player)) return "race";
-        if (RemoteToolServer.active(player)) return "remote";
-        if (player.hasVehicle() || player.isSleeping() || player.isFallFlying() || player.isUsingRiptide()
-                || player.isSubmergedInWater() || player.getAbilities().flying) return "stance";
         if (!ServerPlayNetworking.canSend(player, UnicornLevitationProtocol.STATE)) return "invalid";
         return null;
     }
@@ -196,7 +245,7 @@ public final class UnicornLevitationServer {
         var session = SESSIONS.get(player.getUuid());
         if (session == null || session.player != player) return;
         session.rules.close(); session.mode = Mode.OFF; session.budget = null;
-        session.spaceGrounded = false;
+        session.spaceGrounded = session.remotePaused = session.damageRelease = false;
         if (session.rules.token() > 0) send(session, false, reason);
     }
     private static void send(Session session, boolean allowed, String reason) {
@@ -227,6 +276,7 @@ public final class UnicornLevitationServer {
         final ServerPlayerEntity player;
         final UnicornLevitationRules rules;
         final UnicornLevitationMovementGuard movementGuard = new UnicornLevitationMovementGuard();
+        final UnicornLevitationDamageState damage = new UnicornLevitationDamageState();
         UnicornLevitationProtocol.Control input;
         String dimension;
         Mode mode = Mode.OFF;
@@ -234,12 +284,11 @@ public final class UnicornLevitationServer {
         Vec3d position;
         UnicornLevitationBudget budget;
         long observedTick;
-        boolean grounded, spaceGrounded, correctingMovement;
-        float health, absorption;
+        boolean grounded, spaceGrounded, correctingMovement, remotePaused, damageRelease;
         Session(ServerPlayerEntity player, UnicornLevitationRules rules, long tick) {
             this.player = player; this.rules = rules; dimension = dimension(player); position = player.getPos();
             observedTick = tick; motion = motion(player.getVelocity());
-            health = player.getHealth(); absorption = player.getAbsorptionAmount();
+            damage.observe(player.getHealth(), player.hurtTime, tick);
             grounded = player.isOnGround();
         }
     }

@@ -151,6 +151,7 @@ public final class RaceServer {
         if (denial != null) return denial;
         RemoteToolServer.stop(player);
         top.csituka.magicaland.gameplay.levitation.UnicornLevitationServer.stop(player);
+        top.csituka.magicaland.gameplay.pegasus.PegasusFlightServer.stop(player);
         RaceState.get(player.getServer()).race(player.getUuid(), target);
         if (RaceDefinitions.UNICORN_ID.equals(target)) player.addCommandTag(RemoteToolServer.GRANT);
         else player.removeScoreboardTag(RemoteToolServer.GRANT);

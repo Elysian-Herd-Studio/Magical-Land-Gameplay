@@ -10,6 +10,7 @@ import net.minecraft.client.input.Input;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
+import top.csituka.magicaland.gameplay.client.AbilityWheelScreen;
 import top.csituka.magicaland.gameplay.client.RemoteToolClient;
 import top.csituka.magicaland.gameplay.client.race.RaceClient;
 import top.csituka.magicaland.gameplay.config.GameplayClientConfig;
@@ -97,7 +98,18 @@ public final class EarthSenseClient {
     }
 
     public static void applyFocusInput(Input input, boolean slowDown, float factor) {
-        if (MinecraftClient.getInstance().currentScreen != null) { stop(); return; }
+        var screen = MinecraftClient.getInstance().currentScreen;
+        if (screen instanceof AbilityWheelScreen) {
+            if (focusing() && input != null) {
+                input.movementForward = input.movementSideways = 0;
+                input.pressingForward = input.pressingBack = input.pressingLeft = input.pressingRight = false;
+                input.jumping = false;
+                input.sneaking = true;
+                focusedInput = input;
+            }
+            return;
+        }
+        if (screen != null) { stop(); return; }
         if (EarthSenseFocusInput.apply(input, focusing(), slowDown, factor)) stop();
         else if (focusing() && input != null) focusedInput = input;
     }
@@ -134,9 +146,11 @@ public final class EarthSenseClient {
         }
         if (SESSION.wanted()) {
             if (!client.player.isAlive() || client.player.isSpectator() || !client.isWindowFocused()
-                    || client.isPaused() || client.currentScreen != null || !available()
+                    || client.isPaused() || (client.currentScreen != null && !(client.currentScreen instanceof AbilityWheelScreen))
+                    || !available()
                     || RemoteToolClient.active() || client.player.hurtTime > 0) stop();
-            else if (EarthSenseFocusInput.requestedJump(client.player.input)) stop();
+            else if (!(client.currentScreen instanceof AbilityWheelScreen)
+                    && EarthSenseFocusInput.requestedJump(client.player.input)) stop();
             else if (SESSION.tickExpired()) { stop(); message("error.timeout"); }
             else if (++heartbeat >= 20) { heartbeat = 0; send(true); }
         }
