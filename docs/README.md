@@ -1,36 +1,32 @@
 # Gameplay 文档
 
-玩法包围绕三族能力与成就系统逐步开发。这里按系统整理设计、当前功能与维护记录；安装和通用入口见[项目首页](../README.md)。
+这里收录能力说明、设计方案和维护记录。安装与入门见[项目首页](../README.md)。
 
 ## 三族能力
 
-[种族选择](races.md)说明首次选族、改族药水、外观匹配和服务器规则。身份由玩法服务器保存，各族能力在此基础上逐步开放。
+[种族选择](races.md)：首次选族、改族药水、角翅匹配和服务器规则。
 
-[三族核心能力设计](tribe-core-abilities.md)记录独角兽、天马与陆马的玩法方向。当前状态如下：
+- **独角兽**：[念力出窍](remote-presence.md)、[自我悬浮](unicorn-levitation.md)、[御物](telekinesis.md)。
+- **天马**：[飞行](pegasus-flight.md)。
+- **陆马**：[震动感知](earth-sense.md)。
 
-- **独角兽**：[念力出窍](remote-presence.md)支持遥控物品、互动、精神回声和携物回航；[自我悬浮](unicorn-levitation.md)提供托举、定高、落地缓冲和液面悬浮；开发版[御物](telekinesis.md)支持三件工具独立护卫或采集，正在等待实机验收。照明见[后续方案](unicorn-ability-plan.md)。当前暂停魔力限制。
-- **天马**：[飞行](pegasus-flight.md)测试版支持悬停、滑翔加力、回环横滚、拍翼落地保护和碰撞回弹，等待实机验收。气流能力与彩虹音爆仍在设计中。
-- **陆马**：[震动感知](earth-sense.md)采用下蹲专注、灰白微模糊视野和地面活动色团，支持慢蹲移动与停步恢复；本轮体验验收通过。后踢与地面攻击等用户补充动画后继续制作；自然共鸣仍在设计中。
-
-2026-09-11 确认统一开发原则：各技能先完成并开放完整功能，再安排成长等级与解锁。感知和悬浮已做的功能全部可用；矿物感知等尚未开发的功能继续列为计划。
+后续玩法见[三族核心能力规划](tribe-core-abilities.md)和[独角兽能力规划](unicorn-ability-plan.md)。最初的单物品与单块采集阶段保存在[早期方案归档](archive/2026-09-09-tribe-stages.md)。
 
 ## 成就系统
 
-[成就系统说明](achievements.md)汇总已实现的成就及其规则文档。具体互动、触发条件与历史测试保留在各条目下。
+[成就系统说明](achievements.md)：已加入的成就与触发条件。
 
 ## 开发与维护
 
 - [开发入口与仓库边界](repository-boundary.md)：公共 API、双仓构建、存档兼容和拆仓记录。
 - [待办清单](../TODO.md)：按系统整理后续工作。
-- 个人回归测试源码与入口由作者在本地维护，不随仓库发布；覆盖客户端设置、种族规则、能力逻辑与渲染。需要复跑时请向维护者取得对应版本。
 
 ## 验证记录
 
-报告按当时版本保留，当前功能规则以对应系统文档为准。旧报告中的测试路径为当时的布局，相关源码与入口现由本地维护。
+报告保留各版本的检查范围与结果，当前规则见对应系统文档。测试源码和脚本在本地维护，需要复跑时请联系维护者。
 
 - 种族系统：[首次选择、药水与服务器规则](reports/2026-09-10-race-selection.md)。
 - 陆马能力：[基础震动感知](reports/2026-09-10-earth-sense.md)、[专注与色团效果](reports/2026-09-10-earth-sense-focus.md)、[边缘提示与过渡声](reports/2026-09-10-earth-sense-edge-audio.md)、[慢蹲感知与进退节奏](reports/2026-09-10-earth-sense-moving.md)。
-
-- 独角兽能力：[出窍重构](reports/2026-09-10-remote-rebuild.md)、[反馈修复](reports/2026-09-10-remote-followup.md)、[物品朝向与拾取修复](reports/2026-09-10-remote-pickup-pose.md)、[精神回声与满级出窍](reports/2026-09-11-spiritual-echo.md)、[携物回航](reports/2026-09-11-remote-return.md)、[回声、动物互动与托举试玩修复](reports/2026-09-11-remote-playtest-fixes.md)。这些记录保留各阶段的检查范围；后续已构建测试版，2026-09-11 用户同意提交本轮改动，多人和兼容性验证继续保留。
-- 独角兽悬浮：[初版独立检查](reports/2026-09-10-unicorn-levitation.md)、[首轮试玩修订](reports/2026-09-11-levitation-controls.md)、[开关、保护与惯性修订](reports/2026-09-11-levitation-protection.md)。后续液面缓冲修订已完成独立检查及隔离测试版构建，2026-09-11 用户同意推送当前版本；多人及兼容性验证继续保留。
+- 独角兽能力：[出窍重构](reports/2026-09-10-remote-rebuild.md)、[反馈修复](reports/2026-09-10-remote-followup.md)、[物品朝向与拾取修复](reports/2026-09-10-remote-pickup-pose.md)、[精神回声与满级出窍](reports/2026-09-11-spiritual-echo.md)、[携物回航](reports/2026-09-11-remote-return.md)、[回声、动物互动与托举试玩修复](reports/2026-09-11-remote-playtest-fixes.md)、[回归测试范围与维护入口](reports/remote-regression-records.md)。
+- 独角兽悬浮：[初版独立检查](reports/2026-09-10-unicorn-levitation.md)、[首轮试玩修订](reports/2026-09-11-levitation-controls.md)、[开关、保护与惯性修订](reports/2026-09-11-levitation-protection.md)、[空中续按与视角纠正](reports/2026-09-11-levitation-repress.md)。
 - 成就系统：具体条目的[早期实现与验收记录](carrot-misunderstanding.md)。

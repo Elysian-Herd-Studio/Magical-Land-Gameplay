@@ -3,7 +3,7 @@
   "id": "magicaland_gameplay",
   "version": "${version}",
   "name": "Magical Land: Gameplay",
-  "description": "A Magical Land gameplay addon centered on unicorn, pegasus and earth-pony abilities and an achievement system. In active development.",
+  "description": "Pony tribe abilities and achievements for Magical Land.",
   "authors": ["JessDaodao", "MayHooves"],
   "contact": {
     "issues": "https://github.com/Elysian-Herd-Studio/Magical-Land-Gameplay/issues",

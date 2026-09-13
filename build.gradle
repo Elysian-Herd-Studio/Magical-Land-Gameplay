@@ -17,12 +17,12 @@ repositories {
         maven {
             name = 'appearanceDevelopment'
             url = uri(providers.gradleProperty('appearanceMavenRepo').get())
-            content { includeModule 'top.csituka', 'magicaland-appearance' }
+            content { includeModule 'top.csituka', 'magicaland' }
             metadataSources { mavenPom(); artifact() }
         }
     }
     mavenLocal {
-        content { includeModule 'top.csituka', 'magicaland-appearance' }
+        content { includeModule 'top.csituka', 'magicaland' }
         metadataSources { mavenPom(); artifact() }
     }
 }
@@ -41,7 +41,7 @@ loom {
     }
 }
 
-def appearanceArtifact = "top.csituka:magicaland-appearance:${project.appearance_version}"
+def appearanceArtifact = "top.csituka:magicaland:${project.appearance_version}"
 dependencies {
     modCompileOnly("${appearanceArtifact}:api") { transitive = false }
     modRuntimeOnly(appearanceArtifact) { transitive = false }
