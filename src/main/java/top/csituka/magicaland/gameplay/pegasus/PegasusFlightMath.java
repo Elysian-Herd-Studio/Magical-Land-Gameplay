@@ -27,6 +27,11 @@ public final class PegasusFlightMath {
         }
         public Motion forward() { return new Motion(2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)).normalized(); }
         public Motion up() { return new Motion(2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)).normalized(); }
+        public Motion rotate(Motion value) {
+            Motion imaginary = new Motion(x, y, z);
+            Motion twiceCross = imaginary.cross(value).scale(2);
+            return value.add(twiceCross.scale(w)).add(imaginary.cross(twiceCross));
+        }
         public Attitude multiply(Attitude b) {
             return new Attitude(w*b.x+x*b.w+y*b.z-z*b.y, w*b.y-x*b.z+y*b.w+z*b.x,
                     w*b.z+x*b.y-y*b.x+z*b.w, w*b.w-x*b.x-y*b.y-z*b.z);
@@ -63,7 +68,7 @@ public final class PegasusFlightMath {
         stamina = Math.max(0, Math.min(MAX_STAMINA, stamina));
         if (stamina <= .001f) exhausted = true;
         if (!input.forward() && stamina >= 10) exhausted = false;
-        Dynamics turned = turnBody(dynamics, targetBody(mode, input, dynamics));
+        Dynamics turned = turnBody(dynamics, targetBody(mode, input, dynamics), mode, input, velocity.speed());
         Motion next = velocity;
         boolean boost = false;
         float thrust = 0;
@@ -72,15 +77,14 @@ public final class PegasusFlightMath {
             double speed = velocity.speed();
             double steering = .18 / (1 + speed * .35) * Math.min(1, Math.max(.2, speed / .45));
             next = turnVelocity(velocity, forward, steering, turned.body().up());
-            double fast = Math.max(0, Math.min(1, (speed - 2.8) / (MAX_SPEED - 2.8)));
-            double drag = .0016 + .024 * fast * fast;
+            double drag = .0016 + .0116 * Math.pow(speed / 3.4, 2);
             next = next.scale(1 - drag).add(new Motion(0, -.024, 0));
             float requested = input.forward() && !input.backward() && !exhausted ? 1 : 0;
-            thrust = approach(dynamics.thrust(), requested, .15f);
+            thrust = approach(dynamics.thrust(), requested, requested > dynamics.thrust() ? .05f : .10f);
             thrust = Math.min(thrust, stamina / .7f);
             if (input.backward()) { next = next.scale(.90); thrust = 0; }
             else if (thrust > .001f) {
-                next = next.add(forward.scale(.073 * thrust)); stamina = Math.max(0, stamina - .7f * thrust); boost = true;
+                next = next.add(forward.scale(.045 * thrust)); stamina = Math.max(0, stamina - .7f * thrust); boost = true;
             }
             if (stamina <= .001f) exhausted = true;
             if (!boost) stamina = Math.min(MAX_STAMINA, stamina + 1.6f);
@@ -92,7 +96,11 @@ public final class PegasusFlightMath {
             Motion desired = forward.scale((input.forward() ? 1 : 0) - (input.backward() ? 1 : 0))
                     .add(left.scale((input.left() ? 1 : 0) - (input.right() ? 1 : 0))).normalized().scale(.48)
                     .add(new Motion(0, ((input.ascend() ? 1 : 0) - (input.descend() ? 1 : 0)) * .34, 0));
-            next = velocity.scale(.80).add(desired.scale(.20));
+            double horizontalResponse = desired.x()*desired.x() + desired.z()*desired.z() > 1e-8 ? .18 : .12;
+            double verticalResponse = Math.abs(desired.y()) > 1e-8 ? .20 : .16;
+            next = new Motion(velocity.x() + (desired.x() - velocity.x()) * horizontalResponse,
+                    velocity.y() + (desired.y() - velocity.y()) * verticalResponse,
+                    velocity.z() + (desired.z() - velocity.z()) * horizontalResponse);
             stamina = Math.min(MAX_STAMINA, stamina + 2.2f);
         } else if (mode == Mode.REBOUND) {
             next = new Motion(velocity.x() * .88, Math.max(.10, velocity.y() * .91), velocity.z() * .88);
@@ -125,7 +133,11 @@ public final class PegasusFlightMath {
         return (float)Math.toDegrees(Math.atan2(right.z(), right.x()));
     }
     private static double wrapDegrees(double angle) { double wrapped = angle % 360; return wrapped >= 180 ? wrapped - 360 : wrapped < -180 ? wrapped + 360 : wrapped; }
-    private static Dynamics turnBody(Dynamics dynamics, Attitude target) {
+    public static double rudderAuthority(double speed) {
+        return Math.max(.12, .55 / (1 + Math.pow(Math.max(0, speed) / 1.8, 2)));
+    }
+    private static Dynamics turnBody(Dynamics dynamics, Attitude target, Mode mode, PegasusFlightProtocol.Control input, double speed) {
+        if (mode == Mode.GLIDE) return turnGlidingBody(dynamics, target, input.unlocked(), speed);
         Attitude difference = target.multiply(dynamics.body().inverse());
         double sign = difference.w() < 0 ? -1 : 1;
         Motion axis = new Motion(difference.x()*sign, difference.y()*sign, difference.z()*sign);
@@ -138,6 +150,36 @@ public final class PegasusFlightMath {
         Attitude body = Attitude.rotation(angular).multiply(dynamics.body());
         return new Dynamics(body, angular, dynamics.thrust());
     }
+    private static Dynamics turnGlidingBody(Dynamics dynamics, Attitude target, boolean free, double speed) {
+        Attitude body = dynamics.body();
+        Motion wanted;
+        if (free) {
+            Attitude difference = body.inverse().multiply(target);
+            double sign = difference.w() < 0 ? -1 : 1;
+            Motion axis = new Motion(difference.x()*sign, difference.y()*sign, difference.z()*sign);
+            double angle = 2 * Math.atan2(axis.speed(), Math.max(0, difference.w()*sign));
+            wanted = axis.normalized().scale(angle * .25);
+        } else {
+            Motion heading = body.forward(), desired = target.forward();
+            Motion axis = heading.cross(desired);
+            double angle = Math.acos(Math.max(-1, Math.min(1, heading.dot(desired))));
+            double yawError = wrapDegrees(yaw(target) - yaw(body));
+            if (axis.speed() < 1e-8 && angle > 1) axis = new Motion(0, -Math.copySign(1, yawError), 0);
+            Motion steering = body.inverse().rotate(axis.normalized().scale(angle * .25));
+            float pitch = (float)Math.toDegrees(Math.asin(Math.max(-1, Math.min(1, -heading.y()))));
+            Attitude roll = Attitude.fromYawPitch(yaw(body), pitch).inverse().multiply(body);
+            double bank = wrapDegrees(Math.toDegrees(2 * Math.atan2(roll.z(), roll.w())));
+            double desiredBank = Math.max(-65, Math.min(65, yawError * 1.4));
+            // 协调转弯通过倾斜后的局部俯仰改变航迹；偏航只负责微调。
+            wanted = new Motion(steering.x(), steering.y(), Math.toRadians(wrapDegrees(desiredBank - bank)) * .25);
+        }
+        double yawLimit = MAX_ANGULAR_SPEED * rudderAuthority(speed);
+        wanted = new Motion(clamp(wanted.x(), MAX_ANGULAR_SPEED), clamp(wanted.y(), yawLimit), clamp(wanted.z(), MAX_ANGULAR_SPEED));
+        Motion worldWanted = body.rotate(wanted).capped(MAX_ANGULAR_SPEED);
+        Motion angular = dynamics.angularVelocity().add(worldWanted.add(dynamics.angularVelocity().scale(-1)).capped(ANGULAR_ACCELERATION)).capped(MAX_ANGULAR_SPEED);
+        return new Dynamics(Attitude.rotation(angular).multiply(body), angular, dynamics.thrust());
+    }
+    private static double clamp(double value, double magnitude) { return Math.max(-magnitude, Math.min(magnitude, value)); }
     public static Motion turnVelocity(Motion velocity, Motion heading, double maxAngle, Motion upHint) {
         double speed = velocity.speed();
         if (speed < 1e-9 || heading.speed() < 1e-9) return velocity;

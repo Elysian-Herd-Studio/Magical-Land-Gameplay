@@ -30,6 +30,7 @@ import top.csituka.magicaland.gameplay.pegasus.PegasusFlightMath;
 import top.csituka.magicaland.gameplay.pegasus.PegasusFlightMath.*;
 import top.csituka.magicaland.gameplay.pegasus.PegasusFlightProtocol;
 import top.csituka.magicaland.gameplay.pegasus.PegasusFlightProtocol.*;
+import top.csituka.magicaland.gameplay.pegasus.PegasusWaterSkim;
 import top.csituka.magicaland.gameplay.race.RaceDefinitions;
 
 public final class PegasusFlightClient {
@@ -93,7 +94,7 @@ public final class PegasusFlightClient {
         var player = client.player;
         return available() && player != null && client.world != null && player.isAlive() && !player.isRemoved()
                 && !player.isSpectator() && !player.hasVehicle() && !player.isSleeping() && !player.isFallFlying()
-                && !player.isUsingRiptide() && !player.isTouchingWater() && !player.isInLava()
+                && !player.isUsingRiptide() && !player.isInLava()
                 && !RemoteToolClient.active() && client.getCameraEntity() == player;
     }
     private static boolean readable(MinecraftClient client) {
@@ -186,6 +187,11 @@ public final class PegasusFlightClient {
         STATES.entrySet().removeIf(entry -> tick - entry.getValue().tick() > 40);
         if (!scope(client)) { stop(); return; }
         if (token == 0) { begin(client); send(client); }
+        if (PegasusWaterSkim.enteredWater(client.player, mode)) {
+            wanted = gliding = unlocked = boosting = false; mode = Mode.OFF;
+            HISTORY.clear(); clearCorrections(); cameraTransition = previousCameraTransition = IDENTITY;
+            finishPerspective(client); send(client); intentSequence = sequence;
+        }
         if (!readable(client)) lastSpace = Long.MIN_VALUE / 2;
         if (tick - lastReceived > 60) { stop(); return; }
         previousLook = lookIntent; previousBody = dynamics.body();
@@ -232,11 +238,12 @@ public final class PegasusFlightClient {
         Mode prior = mode;
         Attitude oldCamera = camera(1);
         allowed = state.allowed(); mode = state.mode(); stamina = state.stamina(); boosting = state.boosting(); exhausted = state.exhausted();
-        if (!allowed && !state.reason().equals("landed")) { finishPerspective(client); resetLocal(); return; }
+        boolean normalEnding = state.reason().equals("landed") || state.reason().equals("water");
+        if (!allowed && !normalEnding) { finishPerspective(client); resetLocal(); return; }
         if (mode == Mode.OFF) {
             wanted = gliding = unlocked = boosting = false;
             HISTORY.clear(); clearCorrections(); cameraTransition = previousCameraTransition = IDENTITY;
-            if (state.reason().equals("landed")) {
+            if (normalEnding) {
                 finishPerspective(client); send(client); intentSequence = sequence;
             } else if (client.player.isOnGround()) finishPerspective(client);
             return;
@@ -293,6 +300,10 @@ public final class PegasusFlightClient {
         angularCorrection = angularCorrection.scale(.75); thrustCorrection *= .75f;
         Vec3d next = new Vec3d(result.motion().x(), result.motion().y(), result.motion().z());
         next = next.add(velocityCorrection.multiply(.25)); velocityCorrection = velocityCorrection.multiply(.75);
+        result = PegasusWaterSkim.apply(player, mode, new Step(new Motion(next.x, next.y, next.z),
+                stamina, boosting, exhausted, dynamics));
+        dynamics = result.dynamics();
+        next = new Vec3d(result.motion().x(), result.motion().y(), result.motion().z());
         player.setVelocity(next); player.setSprinting(false);
         int steps = Math.max(1, (int) Math.ceil(next.length() / .35));
         for (int i = 0; i < steps; i++) {
@@ -322,7 +333,7 @@ public final class PegasusFlightClient {
         if (!active()) return false;
         var client = MinecraftClient.getInstance();
         if (readable(client) && mode != Mode.REBOUND) {
-            lookIntent = PegasusFlightView.turn(lookIntent, horizontal, vertical, gliding && unlocked);
+            lookIntent = PegasusFlightView.turn(lookIntent, horizontal, vertical, gliding && unlocked, client.player.getVelocity().length());
             if (gliding && unlocked) lookIntent = PegasusFlightView.limitedLead(dynamics.body(), lookIntent, 70);
             syncLook(client.player);
         }

@@ -3,6 +3,7 @@ package top.csituka.magicaland.gameplay.client.pegasus;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Quaternionf;
+import top.csituka.magicaland.gameplay.pegasus.PegasusFlightMath;
 import top.csituka.magicaland.gameplay.pegasus.PegasusFlightMath.Attitude;
 
 public final class PegasusFlightView {
@@ -26,6 +27,10 @@ public final class PegasusFlightView {
         return (float) Math.toDegrees(-Math.asin(MathHelper.clamp(forward(value).y, -1, 1)));
     }
     public static Attitude turn(Attitude value, double horizontal, double vertical, boolean free) {
+        return turn(value, horizontal, vertical, free, 0);
+    }
+    public static Attitude turn(Attitude value, double horizontal, double vertical, boolean free, double speed) {
+        if (free) horizontal *= PegasusFlightMath.rudderAuthority(speed);
         float yawDelta = (float) MathHelper.clamp(horizontal * .15, -90, 90);
         float pitchDelta = (float) MathHelper.clamp(vertical * .15, -90, 90);
         if (free) return attitude(quaternion(value).rotateY(-yawDelta * DEG).rotateX(pitchDelta * DEG));

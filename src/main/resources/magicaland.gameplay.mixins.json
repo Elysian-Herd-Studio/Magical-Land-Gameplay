@@ -28,7 +28,8 @@
     "UnicornLevitationDamageMixin",
     "UnicornLevitationFallMixin",
     "PegasusFlightNetworkMixin",
-    "PegasusFlightPlayerMixin"
+    "PegasusFlightPlayerMixin",
+    "PegasusFlightDespawnMixin"
   ],
   "injectors": {
     "defaultRequire": 1

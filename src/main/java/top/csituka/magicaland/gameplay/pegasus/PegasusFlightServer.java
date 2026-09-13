@@ -68,7 +68,7 @@ public final class PegasusFlightServer {
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             stop(handler.player, "invalid"); SESSIONS.remove(handler.player.getUuid()); PENDING.remove(handler.player.getUuid());
         });
-        ServerLifecycleEvents.SERVER_STOPPING.register(server -> { SESSIONS.clear(); PENDING.clear(); });
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> { SESSIONS.clear(); PENDING.clear(); PegasusFlightRetention.clear(); });
     }
     public static boolean isPegasus(ServerPlayerEntity player) {
         return player.getServer() != null && RaceDefinitions.PEGASUS_ID.equals(RaceState.get(player.getServer()).race(player.getUuid()));
@@ -112,10 +112,12 @@ public final class PegasusFlightServer {
         if (s.stopped) { send(s, false, s.stopReason, false); return; }
         if (!input.gliding()) s.glideBlocked = false;
         if (!input.flying()) {
+            PegasusFlightRetention.end(player);
             if (s.mode != Mode.LANDING) s.mode = Mode.OFF;
             s.reboundTicks = 0; s.boosting = false;
         } else if (s.mode != Mode.REBOUND) {
-            if (s.mode == Mode.OFF || s.mode == Mode.LANDING) {
+            boolean takingOff = s.mode == Mode.OFF || s.mode == Mode.LANDING;
+            if (takingOff) {
                 if (s.motion.speed() < .01) s.motion = motion(player.getVelocity());
                 s.motion = s.motion.capped(MAX_SPEED);
                 if (player.isOnGround()) s.motion = new Motion(s.motion.x(), .30, s.motion.z());
@@ -123,17 +125,20 @@ public final class PegasusFlightServer {
             }
             s.mode = input.gliding() && !s.glideBlocked ? Mode.GLIDE : Mode.HOVER;
             disableVanillaFlight(player);
+            if (takingOff) PegasusFlightRetention.begin(player);
         }
     }
     private static void tick(Session s, long tick) {
         var player = s.player;
-        if (!connected(player)) { SESSIONS.remove(player.getUuid(), s); return; }
+        if (!connected(player)) { PegasusFlightRetention.end(player); SESSIONS.remove(player.getUuid(), s); return; }
         if (!valid(player) || !s.dimension.equals(dimension(player))) {
             if (!s.stopped || s.mode != Mode.OFF) stop(player, "invalid");
             return;
         }
         if (tick - s.lastInputTick > 40) { if (!s.stopped) stop(player, "timeout"); return; }
         if (s.stopped) return;
+        PegasusFlightRetention.tick(player);
+        if (PegasusWaterSkim.enteredWater(player, s.mode)) { stop(player, "water"); return; }
         if (s.mode == Mode.OFF) {
             long elapsed = tick - s.observedTick;
             Vec3d measured = elapsed > 0 ? player.getPos().subtract(s.position).multiply(1.0 / elapsed) : Vec3d.ZERO;
@@ -148,14 +153,17 @@ public final class PegasusFlightServer {
                 }
             }
         }
-        if (s.mode == Mode.LANDING && player.isOnGround()) s.mode = Mode.OFF;
+        if (s.mode == Mode.LANDING && player.isOnGround()) { s.mode = Mode.OFF; PegasusFlightRetention.end(player); }
         var control = tick - s.lastInputTick > 6 ? s.input.neutral() : s.input;
         var step = step(s.motion, s.mode, control, s.stamina, s.exhausted, s.dynamics);
+        step = PegasusWaterSkim.apply(player, s.mode, step);
         s.motion = step.motion(); s.stamina = step.stamina(); s.boosting = step.boosting(); s.exhausted = step.exhausted(); s.dynamics = step.dynamics();
         if (s.mode != Mode.OFF) {
             disableVanillaFlight(player);
             player.setSprinting(false);
-            move(s, tick);
+            // 自定义移动跳过原版移动包处理，需同步推进区块加载中心。
+            try { move(s, tick); }
+            finally { player.getServerWorld().getChunkManager().updatePosition(player); }
             if (!player.isAlive() || s.stopped) return;
             if (s.mode == Mode.REBOUND && --s.reboundTicks <= 0) { s.mode = Mode.HOVER; s.reboundTicks = 0; }
             if (s.mode != Mode.GLIDE) player.fallDistance = 0;
@@ -186,6 +194,11 @@ public final class PegasusFlightServer {
             try { player.move(MovementType.SELF, delta); }
             finally { s.moving = false; }
             Vec3d actual = player.getPos().subtract(from);
+            if (PegasusWaterSkim.enteredWater(player, s.mode)) {
+                player.setVelocity(vector(s.motion));
+                stop(player, "water");
+                return;
+            }
             if (wasGliding && impactUnlocked(player)) hitCreatures(s, from, player.getPos());
             boolean hitX = Math.abs(actual.x - delta.x) > 1e-5;
             boolean hitY = Math.abs(actual.y - delta.y) > 1e-5;
@@ -300,7 +313,7 @@ public final class PegasusFlightServer {
     }
     private static boolean valid(ServerPlayerEntity player) {
         return connected(player) && player.isAlive() && !player.isRemoved() && isPegasus(player) && !player.isSpectator()
-                && !player.hasVehicle() && !player.isSleeping() && !player.isTouchingWater() && !player.isInLava()
+                && !player.hasVehicle() && !player.isSleeping() && !player.isInLava()
                 && !player.isFallFlying() && !player.isUsingRiptide() && !RemoteToolServer.active(player)
                 && ServerPlayNetworking.canSend(player, PegasusFlightProtocol.STATE);
     }
@@ -314,6 +327,7 @@ public final class PegasusFlightServer {
     private static Motion motion(Vec3d v) { return new Motion(v.x, v.y, v.z); }
     private static Vec3d vector(Motion m) { return new Vec3d(m.x(), m.y(), m.z()); }
     private static void stop(ServerPlayerEntity player, String reason) {
+        PegasusFlightRetention.end(player);
         var s = session(player); if (s == null) return;
         s.mode = Mode.OFF; s.stopped = true; s.boosting = false; s.reboundTicks = 0; s.contacts.clear();
         s.stopReason = reason;
