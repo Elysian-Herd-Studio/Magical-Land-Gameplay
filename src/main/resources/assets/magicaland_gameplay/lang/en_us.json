@@ -163,6 +163,8 @@
   "text.magicaland_gameplay.flight.control": "Glide controls: %s",
   "text.magicaland_gameplay.flight.control.normal": "Simplified",
   "text.magicaland_gameplay.flight.control.aerobatic": "Free aerobatics",
+  "text.magicaland_gameplay.flight.water_protection": "Water protection: %s",
+  "text.magicaland_gameplay.flight.ground_protection": "Ground protection: %s",
   "text.magicaland_gameplay.flight.shake": "Flight and impact shake: %s",
   "text.magicaland_gameplay.flight.wind": "Flight wind: %s"
 }

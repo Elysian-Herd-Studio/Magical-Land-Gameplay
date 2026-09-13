@@ -170,13 +170,28 @@ public final class PegasusFlightMath {
             Attitude roll = Attitude.fromYawPitch(yaw(body), pitch).inverse().multiply(body);
             double bank = wrapDegrees(Math.toDegrees(2 * Math.atan2(roll.z(), roll.w())));
             double desiredBank = Math.max(-65, Math.min(65, yawError * 1.4));
-            // 协调转弯通过倾斜后的局部俯仰改变航迹；偏航只负责微调。
+            double coordination = Math.min(1, MAX_ANGULAR_SPEED / Math.max(1e-9, Math.abs(steering.x())));
+            coordination = Math.min(coordination, MAX_ANGULAR_SPEED / Math.max(1e-9, Math.abs(steering.y())));
+            steering = steering.scale(coordination);
+            // 局部俯仰与偏航同比限幅，保持原定的航向变化平面。
             wanted = new Motion(steering.x(), steering.y(), Math.toRadians(wrapDegrees(desiredBank - bank)) * .25);
         }
-        double yawLimit = MAX_ANGULAR_SPEED * rudderAuthority(speed);
+        double yawLimit = MAX_ANGULAR_SPEED * (free ? rudderAuthority(speed) : 1);
         wanted = new Motion(clamp(wanted.x(), MAX_ANGULAR_SPEED), clamp(wanted.y(), yawLimit), clamp(wanted.z(), MAX_ANGULAR_SPEED));
         Motion worldWanted = body.rotate(wanted).capped(MAX_ANGULAR_SPEED);
         Motion angular = dynamics.angularVelocity().add(worldWanted.add(dynamics.angularVelocity().scale(-1)).capped(ANGULAR_ACCELERATION)).capped(MAX_ANGULAR_SPEED);
+        if (!free) {
+            // 转向与绕前轴倾斜分别积分，避免倾斜带出额外抬头。
+            Motion heading = body.forward(), desired = target.forward();
+            Motion axis = heading.cross(desired).normalized();
+            double angle = Math.acos(Math.max(-1, Math.min(1, heading.dot(desired))));
+            if (axis.speed() < 1e-8 && angle > 1) axis = new Motion(0, -Math.copySign(1, wrapDegrees(yaw(target) - yaw(body))), 0);
+            Motion steering = axis.scale(clamp(angular.dot(axis), angle));
+            double banking = angular.dot(heading);
+            Attitude turning = Attitude.rotation(steering).multiply(body);
+            Attitude banked = turning.multiply(Attitude.rotation(new Motion(0, 0, banking)));
+            return new Dynamics(banked, angular, dynamics.thrust());
+        }
         return new Dynamics(Attitude.rotation(angular).multiply(body), angular, dynamics.thrust());
     }
     private static double clamp(double value, double magnitude) { return Math.max(-magnitude, Math.min(magnitude, value)); }

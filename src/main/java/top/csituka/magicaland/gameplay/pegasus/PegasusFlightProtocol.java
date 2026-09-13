@@ -6,20 +6,28 @@ import net.minecraft.util.Identifier;
 import static top.csituka.magicaland.gameplay.pegasus.PegasusFlightMath.*;
 
 public final class PegasusFlightProtocol {
-    public static final Identifier CONTROL = new Identifier("magicaland_gameplay", "pegasus_control_v2");
-    public static final Identifier STATE = new Identifier("magicaland_gameplay", "pegasus_state_v2");
+    public static final Identifier CONTROL = new Identifier("magicaland_gameplay", "pegasus_control_v3");
+    public static final Identifier STATE = new Identifier("magicaland_gameplay", "pegasus_state_v3");
     public static final Identifier IMPACT = new Identifier("magicaland_gameplay", "pegasus_impact_v1");
     public record Control(long token, int sequence, boolean flying, boolean gliding, boolean unlocked,
                           boolean forward, boolean backward, boolean left, boolean right, boolean ascend,
-                          boolean descend, Attitude attitude) {
+                          boolean descend, boolean waterProtection, boolean groundProtection, Attitude attitude) {
         public Control {
             if (token <= 0 || sequence < 0 || attitude == null || gliding && !flying || unlocked && !gliding)
                 throw new IllegalArgumentException("Invalid flight input");
         }
-        public Control neutral() { return new Control(token, sequence, flying, gliding, unlocked, false, false, false, false, false, false, attitude); }
+        public Control(long token, int sequence, boolean flying, boolean gliding, boolean unlocked,
+                       boolean forward, boolean backward, boolean left, boolean right, boolean ascend,
+                       boolean descend, Attitude attitude) {
+            this(token, sequence, flying, gliding, unlocked, forward, backward, left, right, ascend, descend, true, true, attitude);
+        }
+        public Control neutral() {
+            return new Control(token, sequence, flying, gliding, unlocked, false, false, false, false, false, false,
+                    waterProtection, groundProtection, attitude);
+        }
     }
     public record State(UUID actor, long token, long sequence, int ackInputSequence, String dimension,
-                        boolean allowed, Mode mode, boolean unlocked, float stamina, boolean exhausted, boolean boosting, Dynamics dynamics,
+                        boolean allowed, Mode mode, boolean unlocked, float stamina, boolean exhausted, boolean boosting, boolean impactReady, Dynamics dynamics,
                         double x, double y, double z, double velocityX, double velocityY, double velocityZ,
                         int reboundTicks, String reason) {
         public State {
@@ -28,6 +36,13 @@ public final class PegasusFlightProtocol {
                     || !coordinate(x) || !coordinate(y) || !coordinate(z) || !velocity(velocityX) || !velocity(velocityY) || !velocity(velocityZ)
                     || reboundTicks < 0 || reboundTicks > REBOUND_TICKS || reason == null || !reason.matches("[a-z_]{0,32}")
                     || !allowed && mode != Mode.OFF) throw new IllegalArgumentException("Invalid flight state");
+        }
+        public State(UUID actor, long token, long sequence, int ackInputSequence, String dimension,
+                     boolean allowed, Mode mode, boolean unlocked, float stamina, boolean exhausted, boolean boosting, Dynamics dynamics,
+                     double x, double y, double z, double velocityX, double velocityY, double velocityZ,
+                     int reboundTicks, String reason) {
+            this(actor, token, sequence, ackInputSequence, dimension, allowed, mode, unlocked, stamina, exhausted, boosting, false,
+                    dynamics, x, y, z, velocityX, velocityY, velocityZ, reboundTicks, reason);
         }
         public Attitude attitude() { return dynamics.body(); }
     }
@@ -54,29 +69,32 @@ public final class PegasusFlightProtocol {
     public static void writeControl(PacketByteBuf b, Control c) {
         b.writeLong(c.token()); b.writeVarInt(c.sequence());
         b.writeShort((c.flying() ? 1 : 0) | (c.gliding() ? 2 : 0) | (c.unlocked() ? 4 : 0) | (c.forward() ? 8 : 0)
-                | (c.backward() ? 16 : 0) | (c.left() ? 32 : 0) | (c.right() ? 64 : 0) | (c.ascend() ? 128 : 0) | (c.descend() ? 256 : 0));
+                | (c.backward() ? 16 : 0) | (c.left() ? 32 : 0) | (c.right() ? 64 : 0) | (c.ascend() ? 128 : 0) | (c.descend() ? 256 : 0)
+                | (c.waterProtection() ? 512 : 0) | (c.groundProtection() ? 1024 : 0));
         attitude(b, c.attitude());
     }
     public static Control readControl(PacketByteBuf b) {
-        if (b.readableBytes() > 31) throw new IllegalArgumentException("Oversized flight input");
+        if (b.readableBytes() < 27 || b.readableBytes() > 31) throw new IllegalArgumentException("Invalid flight input length");
         long token = b.readLong(); int seq = b.readVarInt(), f = b.readUnsignedShort();
-        if (f > 511) throw new IllegalArgumentException("Flight input flags");
+        if ((f & ~2047) != 0) throw new IllegalArgumentException("Flight input flags");
         var c = new Control(token, seq, (f & 1) != 0, (f & 2) != 0, (f & 4) != 0, (f & 8) != 0,
-                (f & 16) != 0, (f & 32) != 0, (f & 64) != 0, (f & 128) != 0, (f & 256) != 0, attitude(b));
+                (f & 16) != 0, (f & 32) != 0, (f & 64) != 0, (f & 128) != 0, (f & 256) != 0,
+                (f & 512) != 0, (f & 1024) != 0, attitude(b));
         end(b); return c;
     }
     public static void writeState(PacketByteBuf b, State s) {
         b.writeUuid(s.actor()); b.writeLong(s.token()); b.writeLong(s.sequence()); b.writeVarInt(s.ackInputSequence()); b.writeString(s.dimension(), 128);
-        b.writeBoolean(s.allowed()); b.writeByte(s.mode().ordinal()); b.writeBoolean(s.unlocked()); b.writeFloat(s.stamina()); b.writeBoolean(s.exhausted()); b.writeBoolean(s.boosting());
+        b.writeBoolean(s.allowed()); b.writeByte(s.mode().ordinal()); b.writeBoolean(s.unlocked()); b.writeFloat(s.stamina());
+        b.writeBoolean(s.exhausted()); b.writeBoolean(s.boosting()); b.writeBoolean(s.impactReady());
         dynamics(b, s.dynamics()); b.writeDouble(s.x()); b.writeDouble(s.y()); b.writeDouble(s.z());
         b.writeDouble(s.velocityX()); b.writeDouble(s.velocityY()); b.writeDouble(s.velocityZ()); b.writeVarInt(s.reboundTicks()); b.writeString(s.reason(), 32);
     }
     public static State readState(PacketByteBuf b) {
         if (b.readableBytes() > 768) throw new IllegalArgumentException("Oversized flight state");
         UUID actor = b.readUuid(); long token = b.readLong(), seq = b.readLong(); int ack = b.readVarInt(); String dim = b.readString(128);
-        boolean allowed = b.readBoolean(); int mode = b.readUnsignedByte();
+        boolean allowed = bool(b); int mode = b.readUnsignedByte();
         if (mode >= Mode.values().length) throw new IllegalArgumentException("Flight mode");
-        var s = new State(actor, token, seq, ack, dim, allowed, Mode.values()[mode], b.readBoolean(), b.readFloat(), b.readBoolean(), b.readBoolean(), dynamics(b),
+        var s = new State(actor, token, seq, ack, dim, allowed, Mode.values()[mode], bool(b), b.readFloat(), bool(b), bool(b), bool(b), dynamics(b),
                 b.readDouble(), b.readDouble(), b.readDouble(), b.readDouble(), b.readDouble(), b.readDouble(), b.readVarInt(), b.readString(32));
         end(b); return s;
     }
@@ -84,6 +102,11 @@ public final class PegasusFlightProtocol {
     public static Impact readImpact(PacketByteBuf b) {
         if (b.readableBytes() > 550) throw new IllegalArgumentException("Oversized flight impact");
         var i = new Impact(b.readString(128), b.readDouble(), b.readDouble(), b.readDouble(), b.readFloat(), b.readFloat()); end(b); return i;
+    }
+    private static boolean bool(PacketByteBuf b) {
+        int value = b.readUnsignedByte();
+        if (value > 1) throw new IllegalArgumentException("Flight state boolean");
+        return value != 0;
     }
     private static void end(PacketByteBuf b) { if (b.isReadable()) throw new IllegalArgumentException("Trailing flight data"); }
 }

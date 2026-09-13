@@ -163,6 +163,8 @@
   "text.magicaland_gameplay.flight.control": "滑翔操控：%s",
   "text.magicaland_gameplay.flight.control.normal": "简化操控",
   "text.magicaland_gameplay.flight.control.aerobatic": "自由特技",
+  "text.magicaland_gameplay.flight.water_protection": "水面保护：%s",
+  "text.magicaland_gameplay.flight.ground_protection": "地面保护：%s",
   "text.magicaland_gameplay.flight.shake": "飞行与撞击震动：%s",
   "text.magicaland_gameplay.flight.wind": "飞行风声：%s"
 }

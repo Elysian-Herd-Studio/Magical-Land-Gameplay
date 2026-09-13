@@ -155,14 +155,15 @@ public final class PegasusFlightServer {
         }
         if (s.mode == Mode.LANDING && player.isOnGround()) { s.mode = Mode.OFF; PegasusFlightRetention.end(player); }
         var control = tick - s.lastInputTick > 6 ? s.input.neutral() : s.input;
+        boolean impactReady = impactReady(s, tick);
         var step = step(s.motion, s.mode, control, s.stamina, s.exhausted, s.dynamics);
-        step = PegasusWaterSkim.apply(player, s.mode, step);
+        step = PegasusTerrainProtection.apply(player, s.mode, step, control.waterProtection(), control.groundProtection(), impactReady);
         s.motion = step.motion(); s.stamina = step.stamina(); s.boosting = step.boosting(); s.exhausted = step.exhausted(); s.dynamics = step.dynamics();
         if (s.mode != Mode.OFF) {
             disableVanillaFlight(player);
             player.setSprinting(false);
             // 自定义移动跳过原版移动包处理，需同步推进区块加载中心。
-            try { move(s, tick); }
+            try { move(s, tick, impactReady); }
             finally { player.getServerWorld().getChunkManager().updatePosition(player); }
             if (!player.isAlive() || s.stopped) return;
             if (s.mode == Mode.REBOUND && --s.reboundTicks <= 0) { s.mode = Mode.HOVER; s.reboundTicks = 0; }
@@ -176,7 +177,7 @@ public final class PegasusFlightServer {
         s.position = player.getPos(); s.observedTick = tick;
         if (s.mode != Mode.OFF || tick % 5 == 0) send(s, true, "", tick % 3 == 0);
     }
-    private static void move(Session s, long tick) {
+    private static void move(Session s, long tick, boolean impactReady) {
         var player = s.player;
         Motion before = s.motion;
         int steps = Math.max(1, (int) Math.ceil(before.speed() / .35));
@@ -210,7 +211,7 @@ public final class PegasusFlightServer {
                 boolean terrainCollision = player.getWorld().getBlockCollisions(player, swept).iterator().hasNext();
                 touchedGround |= terrainCollision && hitY && delta.y < 0;
                 s.motion = new Motion(hitX ? 0 : s.motion.x(), hitY ? 0 : s.motion.y(), hitZ ? 0 : s.motion.z());
-                if (wasGliding && terrainCollision && impactUnlocked(player) && tick >= s.nextImpactTick && directImpact(normalSpeed, incoming.speed())) {
+                if (wasGliding && terrainCollision && impactReady && directImpact(normalSpeed, incoming.speed())) {
                     impact(s, normalSpeed, blocked.normalized().scale(-1), tick);
                     return;
                 }
@@ -321,6 +322,7 @@ public final class PegasusFlightServer {
         if (player.getAbilities().flying) { player.getAbilities().flying = false; player.sendAbilitiesUpdate(); }
     }
     private static boolean connected(ServerPlayerEntity player) { return player.getServer() != null && player.getServer().getPlayerManager().getPlayer(player.getUuid()) == player; }
+    private static boolean impactReady(Session s, long tick) { return impactUnlocked(s.player) && tick >= s.nextImpactTick; }
     private static Session session(ServerPlayerEntity player) { var s = SESSIONS.get(player.getUuid()); return s != null && s.player == player ? s : null; }
     private static long now(ServerPlayerEntity player) { return player.getServer().getTicks(); }
     private static String dimension(ServerPlayerEntity player) { return player.getWorld().getRegistryKey().getValue().toString(); }
@@ -340,7 +342,8 @@ public final class PegasusFlightServer {
         var player = s.player;
         if (player.getServer() == null) return;
         var state = new PegasusFlightProtocol.State(player.getUuid(), s.input.token(), ++nextState, s.input.sequence(), dimension(player), allowed,
-                allowed ? s.mode : Mode.OFF, allowed && s.mode == Mode.GLIDE && s.input.unlocked(), s.stamina, s.exhausted, allowed && s.boosting, s.dynamics,
+                allowed ? s.mode : Mode.OFF, allowed && s.mode == Mode.GLIDE && s.input.unlocked(), s.stamina, s.exhausted, allowed && s.boosting,
+                impactReady(s, now(player)), s.dynamics,
                 player.getX(), player.getY(), player.getZ(), s.motion.x(), s.motion.y(), s.motion.z(), s.reboundTicks, reason);
         for (var observer : player.getServer().getPlayerManager().getPlayerList()) {
             if (observer != player && (!observers || observer.getWorld() != player.getWorld() || observer.squaredDistanceTo(player) > 128 * 128)) continue;

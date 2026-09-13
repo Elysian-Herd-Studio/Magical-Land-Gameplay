@@ -22,6 +22,8 @@ public final class GameplayClientConfig {
     private static final String FLIGHT_WIND = "flightWindVolume";
     private static final String FLIGHT_VIEW = "automaticFlightThirdPerson";
     private static final String FLIGHT_AEROBATICS = "flightAerobatics";
+    private static final String PEGASUS_WATER_PROTECTION = "pegasusWaterProtection";
+    private static final String PEGASUS_GROUND_PROTECTION = "pegasusGroundProtection";
     private static JsonObject values;
 
     private GameplayClientConfig() {}
@@ -59,8 +61,12 @@ public final class GameplayClientConfig {
 
     public static boolean automaticFlightThirdPerson() { return flag(FLIGHT_VIEW, true); }
     public static boolean flightAerobatics() { return flag(FLIGHT_AEROBATICS, false); }
+    public static boolean pegasusWaterProtection() { return flag(PEGASUS_WATER_PROTECTION, true); }
+    public static boolean pegasusGroundProtection() { return flag(PEGASUS_GROUND_PROTECTION, true); }
     public static boolean setAutomaticFlightThirdPerson(boolean enabled) { return setFlag(FLIGHT_VIEW, enabled); }
     public static boolean setFlightAerobatics(boolean enabled) { return setFlag(FLIGHT_AEROBATICS, enabled); }
+    public static boolean setPegasusWaterProtection(boolean enabled) { return setFlag(PEGASUS_WATER_PROTECTION, enabled); }
+    public static boolean setPegasusGroundProtection(boolean enabled) { return setFlag(PEGASUS_GROUND_PROTECTION, enabled); }
 
     public static float earthSenseFilterStrength() {
         return strength(SENSE_FILTER, .8f);

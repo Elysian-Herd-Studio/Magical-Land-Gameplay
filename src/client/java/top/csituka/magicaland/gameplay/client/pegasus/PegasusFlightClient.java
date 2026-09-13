@@ -30,6 +30,7 @@ import top.csituka.magicaland.gameplay.pegasus.PegasusFlightMath;
 import top.csituka.magicaland.gameplay.pegasus.PegasusFlightMath.*;
 import top.csituka.magicaland.gameplay.pegasus.PegasusFlightProtocol;
 import top.csituka.magicaland.gameplay.pegasus.PegasusFlightProtocol.*;
+import top.csituka.magicaland.gameplay.pegasus.PegasusTerrainProtection;
 import top.csituka.magicaland.gameplay.pegasus.PegasusWaterSkim;
 import top.csituka.magicaland.gameplay.race.RaceDefinitions;
 
@@ -46,7 +47,7 @@ public final class PegasusFlightClient {
     private static Registration poseRegistration;
     private static long tick, tokenCounter, token, lastReceived, lastSpace = Long.MIN_VALUE / 2;
     private static int sequence, lastCorrected, intentSequence, movedAge = Integer.MIN_VALUE;
-    private static boolean initialized, wanted, allowed, gliding, unlocked, boosting, exhausted;
+    private static boolean initialized, wanted, allowed, gliding, unlocked, boosting, exhausted, impactReady;
     private static Mode mode = Mode.OFF;
     private static float stamina = PegasusFlightMath.MAX_STAMINA;
     private static final Attitude IDENTITY = Attitude.fromYawPitch(0, 0);
@@ -149,7 +150,7 @@ public final class PegasusFlightClient {
 
     private static void begin(MinecraftClient client) {
         token = ++tokenCounter; sequence = lastCorrected = intentSequence = 0; HISTORY.clear();
-        allowed = false; mode = Mode.OFF; gliding = unlocked = false;
+        allowed = impactReady = false; mode = Mode.OFF; gliding = unlocked = false;
         lookIntent = previousLook = Attitude.fromYawPitch(client.player.getYaw(), client.player.getPitch());
         previousBody = Attitude.fromYawPitch(client.player.getYaw(), 0);
         dynamics = new Dynamics(previousBody, Motion.ZERO, 0);
@@ -166,7 +167,7 @@ public final class PegasusFlightClient {
         resetLocal(); STATES.clear(); world = null; owner = null; lastSpace = Long.MIN_VALUE / 2;
     }
     private static void resetLocal() {
-        wanted = allowed = gliding = unlocked = boosting = exhausted = false; mode = Mode.OFF;
+        wanted = allowed = gliding = unlocked = boosting = exhausted = impactReady = false; mode = Mode.OFF;
         HISTORY.clear(); clearCorrections(); cameraTransition = previousCameraTransition = IDENTITY; input = null;
         token = 0; sequence = lastCorrected = intentSequence = 0; movedAge = Integer.MIN_VALUE;
         lastSpace = Long.MIN_VALUE / 2;
@@ -219,7 +220,8 @@ public final class PegasusFlightClient {
         input = new Control(token, ++sequence, wanted, wanted && gliding, wanted && gliding && unlocked,
                 read && RemoteToolClient.held(keys.forwardKey), read && RemoteToolClient.held(keys.backKey),
                 read && RemoteToolClient.held(keys.leftKey), read && RemoteToolClient.held(keys.rightKey),
-                read && RemoteToolClient.held(keys.jumpKey), read && RemoteToolClient.held(keys.sneakKey), lookIntent);
+                read && RemoteToolClient.held(keys.jumpKey), read && RemoteToolClient.held(keys.sneakKey),
+                GameplayClientConfig.pegasusWaterProtection(), GameplayClientConfig.pegasusGroundProtection(), lookIntent);
         var buffer = PacketByteBufs.create();
         PegasusFlightProtocol.writeControl(buffer, input);
         ClientPlayNetworking.send(PegasusFlightProtocol.CONTROL, buffer);
@@ -238,6 +240,7 @@ public final class PegasusFlightClient {
         Mode prior = mode;
         Attitude oldCamera = camera(1);
         allowed = state.allowed(); mode = state.mode(); stamina = state.stamina(); boosting = state.boosting(); exhausted = state.exhausted();
+        impactReady = state.impactReady();
         boolean normalEnding = state.reason().equals("landed") || state.reason().equals("water");
         if (!allowed && !normalEnding) { finishPerspective(client); resetLocal(); return; }
         if (mode == Mode.OFF) {
@@ -300,8 +303,8 @@ public final class PegasusFlightClient {
         angularCorrection = angularCorrection.scale(.75); thrustCorrection *= .75f;
         Vec3d next = new Vec3d(result.motion().x(), result.motion().y(), result.motion().z());
         next = next.add(velocityCorrection.multiply(.25)); velocityCorrection = velocityCorrection.multiply(.75);
-        result = PegasusWaterSkim.apply(player, mode, new Step(new Motion(next.x, next.y, next.z),
-                stamina, boosting, exhausted, dynamics));
+        result = PegasusTerrainProtection.apply(player, mode, new Step(new Motion(next.x, next.y, next.z),
+                stamina, boosting, exhausted, dynamics), input.waterProtection(), input.groundProtection(), impactReady);
         dynamics = result.dynamics();
         next = new Vec3d(result.motion().x(), result.motion().y(), result.motion().z());
         player.setVelocity(next); player.setSprinting(false);
