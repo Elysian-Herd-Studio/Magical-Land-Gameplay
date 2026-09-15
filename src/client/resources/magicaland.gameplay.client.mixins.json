@@ -1,7 +1,7 @@
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "top.csituka.magicaland.gameplay.mixin.client",
+  "package": "top.elysianherd.magicaland.gameplay.mixin.client",
   "compatibilityLevel": "JAVA_17",
   "client": ["TelekinesisSlotDrawMixin", "TelekinesisSlotTooltipMixin", "TelekinesisTokenInputMixin", "RemoteMagicHeldSoundMixin", "RemoteInputMixin", "RemoteLookMixin", "RemoteInteractionMixin", "RemoteScrollMixin", "RemoteHandInvoker", "RemoteHandMixin", "RemoteHudMixin", "RemoteOverlayMixin", "RemoteTargetMixin", "EarthSenseWorldMixin", "EarthSenseInputMixin", "EarthSensePlayerInputMixin", "EarthSenseSoundSystemMixin", "EarthSenseSourceMixin", "EarthSenseTransitionSoundSystemMixin", "EarthSenseTransitionSourceMixin", "EarthSenseFovMixin", "EarthSenseMouseMixin", "UnicornLevitationInputMixin", "UnicornLevitationTravelMixin", "UnicornLevitationPlayerInputMixin", "PegasusKeyboardMixin", "PegasusLookMixin", "PegasusInputMixin", "PegasusPlayerInputMixin", "PegasusTravelMixin", "PegasusCameraMixin", "PegasusWorldViewMixin"],
   "injectors": {"defaultRequire": 1}

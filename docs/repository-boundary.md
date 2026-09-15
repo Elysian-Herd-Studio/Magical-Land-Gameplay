@@ -4,7 +4,7 @@
 
 Gameplay 负责三族能力与成就系统，包括玩法规则、服务端判定、客户端操作和 HUD。[Magical Land 主模组](https://github.com/Elysian-Herd-Studio/Magical-Land)负责模型资源、捏脸、通用渲染和外观同步，通过公共 API 与 Gameplay 对接。
 
-客户端使用 `top.csituka.magicaland.api` 查询外观，并注册可撤回的手持隐藏、注视、角翅限制和飞行姿态。主模组管理内部配置、缓存、骨骼和纹理合成；Gameplay 不直接依赖这些实现。
+客户端使用 `top.elysianherd.magicaland.api` 查询外观，并注册可撤回的手持隐藏、注视、角翅限制和飞行姿态。主模组管理内部配置、缓存、骨骼和纹理合成；Gameplay 不直接依赖这些实现。
 
 服务端判定能力授权、交互权限与结果，管理距离、遮挡、碰撞、库存、死亡和伤害规则。能力授权独立于玩家的捏脸选择。
 

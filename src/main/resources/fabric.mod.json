@@ -13,9 +13,9 @@
   "icon": "assets/magicaland_gameplay/icon.png",
   "environment": "*",
   "entrypoints": {
-    "main": ["top.csituka.magicaland.gameplay.MagicalLandGameplay"],
-    "client": ["top.csituka.magicaland.gameplay.client.RemoteToolClient"],
-    "modmenu": ["top.csituka.magicaland.gameplay.client.ModMenuIntegration"]
+    "main": ["top.elysianherd.magicaland.gameplay.MagicalLandGameplay"],
+    "client": ["top.elysianherd.magicaland.gameplay.client.RemoteToolClient"],
+    "modmenu": ["top.elysianherd.magicaland.gameplay.client.ModMenuIntegration"]
   },
   "mixins": ["magicaland.gameplay.mixins.json", {"config": "magicaland.gameplay.client.mixins.json", "environment": "client"}],
   "depends": {
